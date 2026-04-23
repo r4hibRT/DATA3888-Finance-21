@@ -1,0 +1,6 @@
+Optiver/individual_book_train/
+Optiver/individual_book_train_denorm/
+Optiver/model_ready.parquet
+Optiver
+*.parquet
+*.csv
