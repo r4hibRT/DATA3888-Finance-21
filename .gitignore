@@ -4,3 +4,5 @@ Optiver/model_ready.parquet
 Optiver
 *.parquet
 *.csv
+*.pkl
+*.txt
