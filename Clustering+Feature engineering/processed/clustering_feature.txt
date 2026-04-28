@@ -1,0 +1,5 @@
+log_spread_mean 
+spread_skew 
+spread_trend 
+spread_change_ratio 
+spread_rv_corr 
