@@ -1,0 +1,24 @@
+{
+  "bucket_size_s": 100,
+  "n_buckets": 3,
+  "input_seconds": 300,
+  "target_start_s": 300,
+  "input_dim": 12,
+  "feature_cols": [
+    "log_return_b0",
+    "realized_vol_b0",
+    "mean_spread_b0",
+    "total_volume_b0",
+    "log_return_b1",
+    "realized_vol_b1",
+    "mean_spread_b1",
+    "total_volume_b1",
+    "log_return_b2",
+    "realized_vol_b2",
+    "mean_spread_b2",
+    "total_volume_b2"
+  ],
+  "rv_floor": 1e-08,
+  "val_ratio": 0.1,
+  "random_seed": 42
+}

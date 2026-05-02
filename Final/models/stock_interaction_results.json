@@ -1,0 +1,37 @@
+{
+  "correlation": {
+    "mean_corr": 0.7632817629399556,
+    "median_corr": 0.7745887583140072,
+    "pct_positive": 1.0,
+    "pct_gt_03": 1.0,
+    "pct_gt_05": 0.9966216216216216,
+    "n_stocks": 112,
+    "n_pairs": 6216
+  },
+  "granger": {
+    "n_pairs_tested": 200,
+    "pct_significant": 0.04,
+    "expected_by_chance": 0.05,
+    "mean_pvalue": 0.49406553315419627,
+    "median_pvalue": 0.4889122524857236,
+    "binom_pvalue": 0.786695297215297,
+    "interaction_significant": false
+  },
+  "permutation": {
+    "real_mean_corr": 0.7632817629399556,
+    "null_mean_corr": 0.5661406653798923,
+    "null_std_corr": 1.821984151995e-05,
+    "excess_corr": 0.19714109756006337,
+    "z_score": 10820.073014186293,
+    "p_value": 0.0,
+    "n_permutations": 100,
+    "spatial_significant": true
+  },
+  "lead_lag": {
+    "same_time_mean_corr": 0.760137070142708,
+    "lagged_mean_corr": 0.006271630520993269,
+    "lag_decay_ratio": 0.008250657371328875,
+    "pct_lag_significant": 0.0,
+    "predictive_value": false
+  }
+}
