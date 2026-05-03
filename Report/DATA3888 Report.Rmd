@@ -1,0 +1,34 @@
+---
+title: "DATA3888 Report"
+author: "Finance Group 21"
+date: "2026-05-03"
+output: html_document
+---
+
+## Executive Summary
+
+## Motivation
+
+## EDA/Dataset (characteristics/limitation of data set)
+
+## Feature engineering
+
+## Candidates models
+
+### Cluster level:
+
+-   Transformer+LSTM
+-   LightGBM
+-   ARMA-GARCH + KNN
+-   HAR-RV
+
+### Stock level:
+
+-   GNN
+-   LightGBM
+
+## Experimental evaluation
+
+## Contribution
+
+## Reference
