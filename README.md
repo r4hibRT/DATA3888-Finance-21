@@ -1,339 +1,169 @@
-# HAR-RV Volatility Prediction 
+# Cluster-Level HAR-RV Volatility Prediction
 
 ## 1. Project Aim
 
-The aim of this project is to build an interpretable volatility prediction tool for order book data. The final modelling task is a within-session prediction problem:
+The final task is to predict **cluster-average realised volatility** for the final 2 minutes of each 10 minute `time_id` bucket.
 
-- Each `time_id` represents a 10 minute trading interval.
-- The first 8 minutes are used as the information window.
-- The final 2 minutes are used as the prediction target.
-- The model predicts realised volatility for the final 2 minutes.
+- Input window: seconds `0-479`
+- Target window: seconds `480-599`
+- Evaluation unit: `cluster_id x time_id`
+- Clusters: 3 stock clusters from `Clustering+Feature engineering/processed/clustering/best_cluster_labels.csv`
+- Model: separate HAR-style linear regression for each cluster
 
-This setup avoids assuming that `time_id` values are sequential across trading sessions. It also produces a trader-friendly forecast: given the first 8 minutes of order book behaviour, estimate how volatile the stock will be in the next 2 minutes.
+This keeps the HAR-RV result self-contained: stock source files plus the shared clustering labels are enough to rerun it.
 
-## 2. Repository Structure
+## 2. Files Used
+
+These are the files used for the final HAR-RV result:
 
 | File | Purpose |
 |---|---|
-| `eda.ipynb` | Exploratory data analysis and order book preprocessing experiments. |
-| `har_rv_model.py` | Standalone HAR-RV modelling pipeline. |
-| `individual_book_train/stock_*.csv` | Raw order book data for 112 anonymous stocks. |
-| `har_rv_features.csv` | Feature table created by the model script. |
-| `har_rv_predictions.csv` | Holdout predictions from the HAR-RV model. |
-| `har_rv_model_coefficients.csv` | Fitted model coefficients. |
-| `har_rv_model_coefficients_metrics.csv` | Train/test performance metrics. |
-| `har_rv_cv_metrics.csv` | Cross-validation metrics. |
+| `har_rv_model.py` | Final cluster-level HAR-RV script. |
+| `preprocess.ipynb` | Optional preprocessing notebook that reads raw stock files and creates shared parquet folds. |
+| `har_rv_predictions.csv` | HAR-RV predictions for each `cluster_id` and `time_id`. |
+| `har_rv_metrics.csv` | Overall HAR-RV cluster-level test metrics. |
+| `har_rv_per_cluster_metrics.csv` | HAR-RV test metrics by cluster. |
+| `har_rv_coefficients.csv` | Fitted HAR-RV coefficients for each cluster. |
+| `har_rv_cluster_features.csv` | Optional prebuilt cluster-level HAR feature table. |
+| `Clustering+Feature engineering/processed/clustering/best_cluster_labels.csv` | Stock-to-cluster labels used by HAR-RV. |
+| `individual_book_train/stock_*.csv` | Raw stock order-book files used to build HAR features. |
 
-## 3. EDA Workflow
+The notebooks are kept as source/reference material, but the final HAR-RV script is runnable from the files listed above.
 
-The EDA notebook focuses on understanding and transforming ultra-high-frequency order book data into interpretable market features.
+## 3. Method
 
-### 3.1 Raw Data
+The script uses stock files only as an input source. It can read either raw order-book files or shared preprocessed parquet folds that already contain `wap`. It computes temporary realised-volatility windows for each source file, immediately aggregates them with `best_cluster_labels.csv`, and trains/evaluates only on cluster-level rows.
 
-Each stock file contains order book snapshots with:
+Each modelling row is one cluster in one `time_id`.
 
-- `time_id`
-- `seconds_in_bucket`
-- level 1 and level 2 bid prices
-- level 1 and level 2 ask prices
-- bid sizes
-- ask sizes
-- `stock_id`
+The HAR-RV model uses realised-volatility features from the input window:
 
-The data is not guaranteed to contain every second from 0 to 599 for each `time_id`, so missing seconds may need to be forward-filled or back-filled for analyses requiring a regular time grid.
+- `log_rv_input`
+- `log_rv_last_window`
+- `rv_last_window_to_input`
 
-### 3.2 EDA Feature Engineering
-
-The notebook computes the following core order book features.
-
-**Best bid and best ask**
-
-The best bid is the highest available bid price across levels 1 and 2. The best ask is the lowest available ask price across levels 1 and 2.
+The target is the cluster future volatility log-ratio:
 
 ```text
-best_bid = max(bid_price1, bid_price2)
-best_ask = min(ask_price1, ask_price2)
+log(rv_fut / rv_in)
 ```
 
-**Weighted average price**
-
-The weighted average price, WAP, estimates the mid-market execution price using the best bid/ask prices and their opposite-side sizes:
+A separate linear regression is fitted for each cluster on the training rows. Predictions are transformed back to realised-volatility scale:
 
 ```text
-WAP = (best_bid_price * best_ask_size + best_ask_price * best_bid_size)
-      / (best_bid_size + best_ask_size)
+predicted_rv_fut = rv_in * exp(predicted_log_ratio)
 ```
 
-WAP is the central price series used to calculate log returns and realised volatility.
+For the final reported result, the model follows the shared outer-CV framework:
 
-**Bid-ask spread**
+- Use the 5 train/test folds generated by `preprocess.ipynb`.
+- In each fold, train the fixed HAR-RV specification on `train.parquet`.
+- Predict and evaluate on that fold's `test.parquet`.
+- Report fold metrics plus pooled and mean 5-fold metrics.
 
-```text
-bid_ask_spread = best_ask / best_bid - 1
-```
+## 4. Results
 
-The spread measures trading cost and liquidity. Wider spreads usually indicate less liquid or more uncertain markets.
+### 4.1 Five-Fold Outer-CV Metrics
 
-**Total volume**
+| Model | Evaluation Level | Test Rows | RMSPE | QLIKE | MSE |
+|---|---|---:|---:|---:|---:|
+| HAR-RV | Pooled 5-fold cluster x time_id | 11,490 | 0.0961 | 0.004798 | 2.6269e-08 |
+| HAR-RV | Mean across 5 folds | 2,298 per fold | 0.0961 | 0.004798 | 2.6269e-08 |
 
-```text
-total_volume = bid_size1 + bid_size2 + ask_size1 + ask_size2
-```
+Fold RMSPE values:
 
-This captures visible order book depth.
+| Fold | RMSPE | QLIKE | MSE |
+|---:|---:|---:|---:|
+| 0 | 0.0954 | 0.004653 | 2.6567e-08 |
+| 1 | 0.0979 | 0.004955 | 2.4841e-08 |
+| 2 | 0.0981 | 0.004914 | 2.4922e-08 |
+| 3 | 0.0938 | 0.004429 | 2.3147e-08 |
+| 4 | 0.0953 | 0.005041 | 3.1866e-08 |
 
-**Missing seconds**
+### 4.2 Per-Cluster Mean RMSPE
 
-The EDA notebook includes a function to reindex each `time_id` to all seconds from 0 to 599, then forward-fill and back-fill missing observations. This is useful when comparing stocks on a regular second-by-second grid.
+| Cluster | Stocks | HAR-RV RMSPE |
+|---:|---:|---:|
+| 0 | 10 | 0.1100 |
+| 1 | 90 | 0.0613 |
+| 2 | 12 | 0.1088 |
 
-### 3.3 EDA Outputs
+Cluster 1 has the lowest RMSPE; clusters 0 and 2 are noisier.
 
-The notebook also creates a wide WAP matrix and visualises denormalised price distributions across stocks. This helps compare price levels and detect differences between stocks before modelling.
+## 5. How to Run
 
-For the final model, the script does not require a fully regular 600-row grid per `time_id`; it computes realised volatility directly from observed WAP log returns inside each window.
-
-## 4. Model Workflow
-
-The modelling pipeline is implemented in `har_rv_model.py`.
-
-```text
-raw stock files
-    -> order book features
-    -> realised volatility windows
-    -> HAR-RV feature table
-    -> log transformation
-    -> train/test split and cross-validation
-    -> predictions, coefficients, and metrics
-```
-
-### 4.1 Input and Target Windows
-
-For each stock and `time_id`, the 10 minute bucket is split as follows:
-
-| Window | Seconds | Role |
-|---|---:|---|
-| Full input window | 0-480 | Available information |
-| Long HAR feature | 0-480 | 8 minute realised volatility |
-| Medium HAR feature | 240-480 | Recent 4 minute realised volatility |
-| Short HAR feature | 360-480 | Recent 2 minute realised volatility |
-| Target window | 480-600 | Future 2 minute realised volatility |
-
-The model only uses information from seconds 0-479 to predict volatility over seconds 480-599.
-
-### 4.2 Realised Volatility
-
-For a WAP price series, log returns are:
-
-```text
-r_t = log(WAP_t) - log(WAP_{t-1})
-```
-
-Realised volatility over a window is:
-
-```text
-RV = sqrt(sum(r_t^2))
-```
-
-This is calculated separately for:
-
-- `rv_360_480`
-- `rv_240_480`
-- `rv_0_480`
-- `target_rv_480_600`
-
-### 4.3 Additional Liquidity Features
-
-The model also includes optional liquidity controls from the first 8 minutes:
-
-- mean bid-ask spread
-- maximum bid-ask spread
-- total displayed volume
-- mean volume imbalance
-
-Volume imbalance is calculated from the best bid and ask sizes:
-
-```text
-volume_imbalance = (best_bid_size - best_ask_size)
-                   / (best_bid_size + best_ask_size)
-```
-
-These features are included because volatility can be related to liquidity stress, widening spreads, and one-sided order book pressure.
-
-## 5. HAR-RV Model Logic
-
-HAR-RV stands for Heterogeneous Autoregressive Realised Volatility. The key idea is that volatility has memory over different horizons. Short-term, medium-term, and longer-term realised volatility can all help predict future volatility.
-
-The model uses a linear regression on log realised volatility:
-
-```text
-log(target_rv_480_600)
-    = beta_0
-    + beta_1 log(rv_360_480)
-    + beta_2 log(rv_240_480)
-    + beta_3 log(rv_0_480)
-    + beta_4 log(spread_mean_0_480)
-    + beta_5 log(spread_max_0_480)
-    + beta_6 log(volume_sum_0_480)
-    + beta_7 volume_imbalance_mean_0_480
-    + error
-```
-
-The log transformation is used because realised volatility is positive and right-skewed. It also makes the coefficients easier to interpret as proportional effects.
-
-The prediction is transformed back to realised volatility scale:
-
-```text
-predicted_rv = exp(predicted_log_rv)
-```
-
-A prediction floor of `1e-5` is applied to avoid near-zero volatility forecasts, which can cause unstable QLIKE scores.
-
-## 6. Filtering Rule
-
-The model filters out target windows with realised volatility at or below `1e-5`.
-
-Reason:
-
-- RMSPE divides by the true volatility.
-- If true realised volatility is zero or extremely close to zero, a normal-sized prediction creates an enormous percentage error.
-- These near-flat windows can dominate the average metric even though they are not representative of trader-facing volatility risk.
-
-In the full feature table:
-
-- total rows: 428,932
-- stocks: 112
-- rows filtered by `target_rv_480_600 <= 1e-5`: 27
-
-This removes only a tiny fraction of the data while making RMSPE and QLIKE more stable.
-
-## 7. Evaluation Framework
-
-The model is evaluated using a random 80/20 holdout split and 5-fold cross-validation.
-
-### 7.1 RMSPE
-
-Root mean squared percentage error:
-
-```text
-RMSPE = sqrt(mean(((y_true - y_pred) / y_true)^2))
-```
-
-This is useful because volatility levels differ across stocks. RMSPE measures relative forecasting error.
-
-### 7.2 QLIKE
-
-QLIKE evaluates volatility forecasts on variance scale:
-
-```text
-ratio = true_variance / predicted_variance
-QLIKE = mean(ratio - log(ratio) - 1)
-```
-
-It is commonly used for volatility forecasting because it penalises poor variance forecasts, especially underprediction.
-
-### 7.3 MSE
-
-Mean squared error:
-
-```text
-MSE = mean((y_true - y_pred)^2)
-```
-
-MSE gives an absolute error measure on realised volatility scale.
-
-## 8. Results
-
-### 8.1 Holdout Metrics
-
-| Split | Rows | Filtered Rows | Prediction Floor | RMSPE | QLIKE | MSE |
-|---|---:|---:|---:|---:|---:|---:|
-| Train | 343,124 | 27 | 0.00001 | 0.8886 | 1.0503 | 4.5898e-07 |
-| Test | 85,781 | 27 | 0.00001 | 0.7892 | 0.2451 | 4.8693e-07 |
-
-The test RMSPE is approximately `0.789`, meaning the model's relative volatility forecast error is around 79% on the holdout set. This is not unusual for noisy high-frequency volatility prediction, especially using an interpretable linear model.
-
-### 8.2 Model Coefficients
-
-| Feature | Coefficient |
-|---|---:|
-| Intercept | -1.0328 |
-| `log_rv_0_480` | 0.6454 |
-| `log_rv_240_480` | 0.1479 |
-| `log_rv_360_480` | 0.1356 |
-| `volume_imbalance_mean_0_480` | -0.0134 |
-| `log_spread_mean_0_480` | -0.0118 |
-| `log_spread_max_0_480` | 0.0098 |
-| `log_volume_sum_0_480` | -0.0027 |
-
-The largest coefficient is `log_rv_0_480`, which means the full 8 minute realised volatility is the strongest predictor of final 2 minute volatility. The 4 minute and 2 minute realised volatility features also contribute, showing that recent volatility persistence matters.
-
-The liquidity variables have smaller coefficients. They add context, but the model is primarily driven by realised volatility history.
-
-### 8.3 Cross-Validation Metrics
-
-| Fold | Rows | RMSPE | QLIKE | MSE |
-|---:|---:|---:|---:|---:|
-| 1 | 85,781 | 0.7892 | 0.2451 | 4.8693e-07 |
-| 2 | 85,781 | 0.7867 | 0.2273 | 4.6127e-07 |
-| 3 | 85,781 | 0.9428 | 0.2158 | 4.5436e-07 |
-| 4 | 85,781 | 1.0772 | 3.5267 | 4.6142e-07 |
-| 5 | 85,781 | 0.7011 | 0.2197 | 4.6047e-07 |
-
-Most folds have similar RMSPE and QLIKE performance. Fold 4 has a much larger QLIKE score, caused by at least one case where the first 8 minutes looked quiet but the final 2 minutes became volatile. This is a meaningful limitation of HAR-RV: it captures volatility persistence better than sudden jumps.
-
-## 9. Interpretation for Traders
-
-The model can be explained to traders in simple terms:
-
-> If a stock has been volatile over the first 8 minutes, especially across recent shorter windows, the model expects higher volatility in the next 2 minutes.
-
-The model is useful because it is transparent:
-
-- Traders can see the exact features used.
-- Coefficients show which signals matter most.
-- The strongest signal is historical realised volatility.
-- Liquidity measures provide secondary context.
-
-The output should be interpreted as a short-horizon volatility forecast, not a directional price forecast. It does not say whether the price will rise or fall; it estimates the size of future price movement.
-
-## 10. Limitations
-
-The main limitations are:
-
-- `time_id` values are treated as independent buckets, so the model does not learn long sequential time dynamics across buckets.
-- HAR-RV assumes volatility persistence, so it can miss sudden volatility jumps after a calm input window.
-- The model is linear on log volatility, which improves interpretability but limits flexibility.
-- The model uses order book snapshots only and does not include news, market-wide shocks, or cross-stock dependencies.
-- RMSPE is unstable for near-zero realised volatility, so a small filtering threshold is required.
-
-## 11. How to Run
-
-To train from the raw stock files:
+Run the final HAR-RV benchmark:
 
 ```bash
 python3 har_rv_model.py
 ```
 
-To rerun evaluation from an existing feature table:
+If you want to use the shared train/test folds, run `preprocess.ipynb` first. It reads:
 
-```bash
-python3 har_rv_model.py --features-in har_rv_features.csv
+```text
+individual_book_train/stock_*.csv
 ```
 
-To test quickly on a smaller number of stocks:
+and creates:
 
-```bash
-python3 har_rv_model.py --max-files 5
+```text
+processed/full.parquet
+processed/fold_0/train.parquet
+processed/fold_0/test.parquet
+...
+processed/fold_4/train.parquet
+processed/fold_4/test.parquet
 ```
 
-To remove liquidity controls and run a pure HAR-RV model:
+To share the same train/test split as the other models for one fold, run:
 
 ```bash
-python3 har_rv_model.py --no-liquidity
+python3 har_rv_model.py --fold-dir processed/fold_0
 ```
 
-## 12. Conclusion
+To use the outer 5-fold framework and skip tuning:
 
-The final model is an interpretable HAR-RV volatility predictor. It uses realised volatility from the first 8 minutes of each bucket, plus liquidity controls, to predict volatility over the final 2 minutes. The model is easy to explain to traders because its logic follows a direct market intuition: recent realised volatility is informative about near-future realised volatility.
+```bash
+python3 har_rv_model.py --folds-root processed --folds 0 1 2 3 4
+```
 
-The current holdout performance is reasonable for a simple interpretable high-frequency volatility model. The most important caveat is that sudden late-window jumps remain difficult to predict from historical volatility alone.
+This still fits and evaluates HAR at cluster level; the fold files are only the shared input splits.
+Reading and writing these parquet files requires `pyarrow` or `fastparquet`.
+
+The HAR script automatically uses the `wap` column when it is present, so the preprocessed files do not need the raw bid/ask columns.
+
+The default cluster labels are:
+
+```text
+Clustering+Feature engineering/processed/clustering/best_cluster_labels.csv
+```
+
+If `har_rv_cluster_features.csv` already exists, rerun from it without rereading the source stock files:
+
+```bash
+python3 har_rv_model.py --cluster-features-in har_rv_cluster_features.csv
+```
+
+The script writes:
+
+```text
+har_rv_predictions.csv
+har_rv_metrics.csv
+har_rv_per_cluster_metrics.csv
+har_rv_coefficients.csv
+har_rv_cluster_features.csv
+```
+
+When `--folds-root` is used, these outputs include `fold_id`; `har_rv_metrics.csv` also includes pooled, fold-mean, and fold-standard-deviation rows.
+
+## 6. Notes
+
+- This is a cluster-level model, not a stock-level model.
+- The reported RMSPE should be compared with other cluster-level models only.
+- The old row-level HAR outputs were removed to avoid mixing evaluation levels.
+- Cluster labels come from the shared clustering output.
+
+## 7. References
+
+- Corsi, F. (2009). [A Simple Approximate Long-Memory Model of Realized Volatility](https://doi.org/10.1093/jjfinec/nbp001).
+- Patton, A. (2011). [Volatility forecast comparison using imperfect volatility proxies](https://EconPapers.repec.org/RePEc:eee:econom:v:160:y:2011:i:1:p:246-256).
