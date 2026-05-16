@@ -14,7 +14,9 @@ CPU parallelism strategy (same peak RAM):
   - Correlation matrix computed in chunked float32 matmul (BLAS threads)
 
 Pipeline:
-  processed/{train,test}.parquet → this script → features/feature_store_{train,test}.parquet
+  eda.ipynb → processed/fold_{0..4}/{train,test}.parquet
+  → this script → processed/fold_{0..4}/feature_store_{train,test}.parquet
+  All train-fit steps (clustering, KNN, etc.) are isolated per fold.
 
 Feature groups:
   A. Rolling (30s/60s/120s causal windows)
@@ -67,9 +69,9 @@ warnings.filterwarnings("ignore")
 SEED = 42
 np.random.seed(SEED)
 
-DATA_DIR   = Path("processed")
-OUTPUT_DIR = Path("features")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+N_FOLDS = 5
+
+DATA_DIR = Path("processed")  # contains fold_0/ .. fold_4/ from eda.ipynb
 
 INPUT_END     = 480
 TARGET_START  = 480
@@ -83,14 +85,14 @@ RV_FLOOR = 1e-4
 N_WORKERS = max(1, cpu_count())
 
 ROLL_COLS    = ["wap", "log_wap", "bid_ask_spread", "total_volume",
-                "log_volume", "price_spread", "volume_imbalance"]
+                "log_volume", "price_spread", "depth_imbalance"]
 ROLL_WINDOWS = [30, 60, 120]
 
 BUCKET_AGG_COLS = ["wap", "log_wap", "bid_ask_spread", "total_volume",
-                   "log_volume", "price_spread", "volume_imbalance"]
+                   "log_volume", "price_spread", "depth_imbalance"]
 
 INTERACT_BASE = ["wap", "bid_ask_spread", "total_volume",
-                 "price_spread", "volume_imbalance", "log_volume"]
+                 "price_spread", "depth_imbalance", "log_volume"]
 
 
 def log(msg: str) -> None:
@@ -120,14 +122,22 @@ def downcast(df: pd.DataFrame) -> pd.DataFrame:
 
 def load_raw(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path)
-    df["stock_id"] = df["stock_id"].apply(parse_stock_id)
+    # Efficient stock_id parsing: map unique values instead of per-row apply
+    uniq = df["stock_id"].unique()
+    sid_map = {s: parse_stock_id(s) for s in uniq}
+    df["stock_id"] = df["stock_id"].map(sid_map).astype(np.int32)
+
+    # Downcast before sort to halve the sort memory
+    df["time_id"] = df["time_id"].astype(np.int32)
+    df["seconds_in_bucket"] = df["seconds_in_bucket"].astype(np.int16)
     df.sort_values(["stock_id", "time_id", "seconds_in_bucket"], inplace=True)
     df.reset_index(drop=True, inplace=True)
 
-    wap = df["wap"].values
-    df["log_wap"]    = np.log(np.clip(wap, 1e-10, None)).astype(np.float32)
-    df["log_spread"] = np.log(np.clip(df["bid_ask_spread"].values, 1e-10, None) + 1).astype(np.float32)
-    df["log_volume"] = np.log1p(np.clip(df["total_volume"].values, 0, None)).astype(np.float32)
+    wap = df["wap"].values.astype(np.float32)
+    df["wap"]      = wap
+    df["log_wap"]    = np.log(np.clip(wap, 1e-10, None))
+    df["log_spread"] = np.log(np.clip(df["bid_ask_spread"].values.astype(np.float32), 1e-10, None) + 1)
+    df["log_volume"] = np.log1p(np.clip(df["total_volume"].values.astype(np.float32), 0, None))
     df["bucket_120"] = np.clip(df["seconds_in_bucket"].values // BUCKET_SIZE,
                                0, N_BUCKETS - 1).astype(np.int8)
 
@@ -137,15 +147,10 @@ def load_raw(path: Path) -> pd.DataFrame:
 def compute_target(df: pd.DataFrame) -> pd.DataFrame:
     """
     Target: log(RV_480–599) - log(RV_360–479)
-
-    log-difference between the target window and the nearest input bucket
-    (bucket 3: seconds 360–479). Forces the model to predict *change* in
-    volatility relative to the most recent signal rather than the level.
-
-    At inference: log_rv = log_rv_diff_pred + past_log_rv_bkt3
     """
     # ── Target RV (seconds 480–599) ───────────────────────────────
-    tgt = df[df["seconds_in_bucket"] >= TARGET_START].copy()
+    tgt_mask = df["seconds_in_bucket"] >= TARGET_START
+    tgt = df.loc[tgt_mask, ["stock_id", "time_id", "log_wap"]].copy()
     tgt["lr"] = tgt.groupby(["stock_id", "time_id"])["log_wap"].diff().fillna(0)
     rv = (
         tgt.groupby(["stock_id", "time_id"])["lr"]
@@ -153,15 +158,14 @@ def compute_target(df: pd.DataFrame) -> pd.DataFrame:
         .reset_index(name="rv")
     )
     rv["log_rv"] = np.log(rv["rv"].clip(lower=RV_FLOOR)).astype(np.float32)
+    del tgt; gc.collect()
 
     # ── Nearest bucket RV (bucket 3: seconds 360–479) ─────────────
     BKT_START = (N_BUCKETS - 1) * BUCKET_SIZE   # 360
     BKT_END   = INPUT_END                        # 480
 
-    bkt = df[
-        (df["seconds_in_bucket"] >= BKT_START) &
-        (df["seconds_in_bucket"] <  BKT_END)
-    ].copy()
+    bkt_mask = (df["seconds_in_bucket"] >= BKT_START) & (df["seconds_in_bucket"] < BKT_END)
+    bkt = df.loc[bkt_mask, ["stock_id", "time_id", "log_wap"]].copy()
     bkt["lr"] = bkt.groupby(["stock_id", "time_id"])["log_wap"].diff().fillna(0)
     bkt_rv = (
         bkt.groupby(["stock_id", "time_id"])["lr"]
@@ -171,16 +175,17 @@ def compute_target(df: pd.DataFrame) -> pd.DataFrame:
     bkt_rv["log_bkt3_rv"] = np.log(
         bkt_rv["bkt3_rv"].clip(lower=RV_FLOOR)
     ).astype(np.float32)
+    del bkt; gc.collect()
 
     rv = rv.merge(
         bkt_rv[["stock_id", "time_id", "log_bkt3_rv"]],
         on=["stock_id", "time_id"], how="left"
     )
+    del bkt_rv; gc.collect()
 
     # log_rv_diff = log(RV_target) - log(RV_nearest_bucket)
     rv["log_rv_diff"] = (rv["log_rv"] - rv["log_bkt3_rv"]).astype(np.float32)
 
-    del tgt, bkt, bkt_rv; gc.collect()
     return rv[["stock_id", "time_id", "rv", "log_rv", "log_rv_diff"]]
 
 
@@ -191,33 +196,36 @@ def compute_target(df: pd.DataFrame) -> pd.DataFrame:
 
 def _fast_rolling_mean_std(vals: np.ndarray, groups: np.ndarray, win: int):
     """
-    Vectorised causal rolling mean+std within groups using cumsum trick.
-    Much faster than groupby().transform(lambda) for large DataFrames.
-    groups: integer group labels (e.g. time_id encoded as contiguous ints).
-    Returns (mean_arr, std_arr) both float32.
+    Vectorised causal rolling mean+std within contiguous groups.
+    Assumes data is sorted by group (time_id). Uses np.searchsorted
+    for O(1) group boundary lookup instead of boolean masks.
     """
     n = len(vals)
     mean_out = np.empty(n, dtype=np.float32)
     std_out  = np.empty(n, dtype=np.float32)
 
-    group_ids, inverse = np.unique(groups, return_inverse=True)
+    # Find group boundaries (data must be sorted by group)
+    change = np.empty(n, dtype=np.bool_)
+    change[0] = True
+    change[1:] = groups[1:] != groups[:-1]
+    starts = np.nonzero(change)[0]
+    ends   = np.append(starts[1:], n)
 
-    for gid in group_ids:
-        mask = groups == gid
-        v = vals[mask].astype(np.float64)
-        m = len(v)
+    for s, e in zip(starts, ends):
+        v = vals[s:e].astype(np.float64)
+        m = e - s
 
         cs  = np.cumsum(v)
         cs2 = np.cumsum(v * v)
 
         idx    = np.arange(m)
-        starts = np.maximum(0, idx - win + 1)
-        counts = idx - starts + 1
+        ws     = np.maximum(0, idx - win + 1)
+        counts = idx - ws + 1
 
-        s_at_start  = np.where(starts > 0, cs[starts - 1], 0.0)
-        roll_sum    = cs - s_at_start
-        s2_at_start = np.where(starts > 0, cs2[starts - 1], 0.0)
-        roll_sum2   = cs2 - s2_at_start
+        s_at  = np.where(ws > 0, cs[ws - 1], 0.0)
+        roll_sum  = cs - s_at
+        s2_at = np.where(ws > 0, cs2[ws - 1], 0.0)
+        roll_sum2 = cs2 - s2_at
 
         rm = roll_sum / counts
         var = np.where(
@@ -227,9 +235,10 @@ def _fast_rolling_mean_std(vals: np.ndarray, groups: np.ndarray, win: int):
         )
         rs = np.sqrt(np.maximum(var, 0.0))
 
-        mean_out[mask] = rm.astype(np.float32)
-        std_out[mask]  = rs.astype(np.float32)
+        mean_out[s:e] = rm.astype(np.float32)
+        std_out[s:e]  = rs.astype(np.float32)
 
+    del change
     return mean_out, std_out
 
 
@@ -261,9 +270,12 @@ def process_one_stock(stock_df: pd.DataFrame) -> pd.DataFrame:
     Build all per-second features for one stock, aggregate to (time_id)
     rows, and return the aggregated DataFrame.
     Keeps only the input window (seconds 0–479).
-    No whole-window (480s) RV computed — per-bucket RVs only.
     """
-    df = stock_df[stock_df["seconds_in_bucket"] < INPUT_END].copy()
+    keep_cols = ["stock_id", "time_id", "seconds_in_bucket", "bucket_120",
+                 "wap", "log_wap", "bid_ask_spread", "total_volume",
+                 "log_volume", "price_spread", "depth_imbalance", "log_spread"]
+    keep_cols = [c for c in keep_cols if c in stock_df.columns]
+    df = stock_df.loc[stock_df["seconds_in_bucket"] < INPUT_END, keep_cols].copy()
     if len(df) == 0:
         return pd.DataFrame()
 
@@ -302,22 +314,35 @@ def process_one_stock(stock_df: pd.DataFrame) -> pd.DataFrame:
         df[f"roll_rv_{w}s"] = np.sqrt(np.clip(rm_sq * w, 0, None)).astype(np.float32)
 
     # ── Realized kernel (2-scale RV) — per bucket and last windows ─
-    tid_unique = df["time_id"].unique()
+    # Use contiguous group slicing (data is sorted by time_id within stock)
     rk_bkt  = {b: {} for b in range(N_BUCKETS)}
     rk_w60  = {}
     rk_w120 = {}
 
-    for tid in tid_unique:
-        tmask = df["time_id"].values == tid
-        rets  = df.loc[tmask, "log_ret"].values.astype(np.float64)
+    tid_arr = df["time_id"].values
+    lr_arr  = df["log_ret"].values.astype(np.float64)
+    bkt_arr = df["bucket_120"].values
+
+    change = np.empty(len(tid_arr), dtype=np.bool_)
+    change[0] = True
+    change[1:] = tid_arr[1:] != tid_arr[:-1]
+    grp_starts = np.nonzero(change)[0]
+    grp_ends   = np.append(grp_starts[1:], len(tid_arr))
+
+    for s, e in zip(grp_starts, grp_ends):
+        tid  = tid_arr[s]
+        rets = lr_arr[s:e]
 
         rk_w60[tid]  = two_scale_rv(rets[-60:]  if len(rets) >= 60  else rets, h=2)
         rk_w120[tid] = two_scale_rv(rets[-120:] if len(rets) >= 120 else rets, h=2)
 
+        bkt_slice = bkt_arr[s:e]
         for b in range(N_BUCKETS):
-            bmask = tmask & (df["bucket_120"].values == b)
-            brets = df.loc[bmask, "log_ret"].values.astype(np.float64)
+            bmask = bkt_slice == b
+            brets = rets[bmask]
             rk_bkt[b][tid] = two_scale_rv(brets, h=2) if len(brets) >= 4 else 0.0
+
+    del change
 
     # ── Aggregate to (time_id) level ──────────────────────────────
     skip = {"stock_id", "time_id", "seconds_in_bucket", "bucket_120"}
@@ -325,12 +350,18 @@ def process_one_stock(stock_df: pd.DataFrame) -> pd.DataFrame:
                 df[c].dtype in (np.float32, np.float64, np.int32, np.int8)]
 
     g = df.groupby("time_id")
-    agg_last  = g[num_cols].last().add_suffix("_last")
-    agg_mean  = g[num_cols].mean().add_suffix("_wmean")
-    agg_std   = g[num_cols].std().fillna(0).add_suffix("_wstd")
-    agg_range = (g[num_cols].max() - g[num_cols].min()).add_suffix("_range")
 
-    agg = pd.concat([agg_last, agg_mean, agg_std, agg_range], axis=1)
+    # Build agg incrementally to avoid 4x memory spike
+    agg = g[num_cols].last().add_suffix("_last")
+    agg = agg.join(g[num_cols].mean().add_suffix("_wmean"))
+    agg = agg.join(g[num_cols].std().fillna(0).add_suffix("_wstd"))
+
+    g_max = g[num_cols].max()
+    g_min = g[num_cols].min()
+    agg_range = (g_max - g_min).add_suffix("_range")
+    del g_max, g_min
+    agg = agg.join(agg_range)
+    del agg_range
     agg = agg.reset_index()
     agg["stock_id"] = stock_id
     agg["n_tids_this_stock"] = np.int32(len(agg))
@@ -420,33 +451,39 @@ def _worker_process_stock(stock_df):
     return process_one_stock(stock_df)
 
 
+def _worker_process_stock(stock_df):
+    return process_one_stock(stock_df)
+
+
 def build_aggregated(raw_df: pd.DataFrame, label: str) -> pd.DataFrame:
     stocks    = raw_df["stock_id"].unique()
     total     = len(stocks)
-    stock_dfs = [raw_df[raw_df["stock_id"] == sid] for sid in stocks]
 
     log(f"  {label}: processing {total} stocks across {N_WORKERS} workers ...")
 
     if N_WORKERS <= 1:
         chunks = []
-        for i, sdf in enumerate(stock_dfs):
-            chunk = process_one_stock(sdf)
+        for i, sid in enumerate(stocks):
+            chunk = process_one_stock(raw_df[raw_df["stock_id"] == sid])
             if len(chunk) > 0:
                 chunks.append(chunk)
             if (i + 1) % 25 == 0 or (i + 1) == total:
                 log(f"  {label}: {i+1}/{total} stocks")
     else:
+        # Feed stocks in small batches to limit peak RAM
+        BATCH = max(1, N_WORKERS * 2)
         chunks = []
-        with ProcessPoolExecutor(max_workers=N_WORKERS) as pool:
-            results = pool.map(_worker_process_stock, stock_dfs,
-                               chunksize=max(1, total // (N_WORKERS * 4)))
-            for i, chunk in enumerate(results):
+        for batch_start in range(0, total, BATCH):
+            batch_sids = stocks[batch_start:batch_start + BATCH]
+            batch_dfs  = [raw_df[raw_df["stock_id"] == sid] for sid in batch_sids]
+            with ProcessPoolExecutor(max_workers=N_WORKERS) as pool:
+                results = list(pool.map(_worker_process_stock, batch_dfs))
+            for chunk in results:
                 if chunk is not None and len(chunk) > 0:
                     chunks.append(chunk)
-                if (i + 1) % 25 == 0 or (i + 1) == total:
-                    log(f"  {label}: {i+1}/{total} stocks")
+            del batch_dfs, results; gc.collect()
+            log(f"  {label}: {min(batch_start + BATCH, total)}/{total} stocks")
 
-    del stock_dfs
     result = pd.concat(chunks, ignore_index=True)
     del chunks; gc.collect()
     return result
@@ -474,18 +511,20 @@ def add_interactions(df: pd.DataFrame) -> pd.DataFrame:
         tv  = df["total_volume_last"].values
         new["spread_per_vol"] = (bas / (tv + EPS)).astype(np.float32)
         new["vol_wt_spread"]  = (bas * tv).astype(np.float32)
-    if "bid_ask_spread_last" in df.columns and "volume_imbalance_last" in df.columns:
+    if "bid_ask_spread_last" in df.columns and "depth_imbalance_last" in df.columns:
         new["spread_x_imbal"] = (
-            df["bid_ask_spread_last"].values * df["volume_imbalance_last"].values
+            df["bid_ask_spread_last"].values * df["depth_imbalance_last"].values
         ).astype(np.float32)
     if "price_spread_last" in df.columns and "wap_last" in df.columns:
         new["pspread_ratio"] = (
             df["price_spread_last"].values / (df["wap_last"].values + EPS)
         ).astype(np.float32)
 
-    result = pd.concat([df, pd.DataFrame(new, index=df.index)], axis=1)
+    # Assign directly instead of pd.concat (avoids full copy)
+    for k, v in new.items():
+        df[k] = v
     del new; gc.collect()
-    return result
+    return df
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -506,21 +545,20 @@ def add_cross_stock_features(train_agg: pd.DataFrame,
     tid_stats = tid_stats.reset_index()
 
     for df in [train_agg, test_agg]:
-        merged = df.merge(tid_stats, on="time_id", how="left")
+        # Use map instead of merge to avoid full DataFrame copy
+        for stat_col in tid_stats.columns:
+            if stat_col == "time_id":
+                continue
+            mapping = tid_stats.set_index("time_id")[stat_col]
+            df[stat_col] = df["time_id"].map(mapping).fillna(0).astype(np.float32)
         for col in cross_cols:
             m_col = f"tid_{col}_mean"
             s_col = f"tid_{col}_std"
-            if m_col in merged.columns and s_col in merged.columns:
-                merged[f"csz_{col}"] = (
-                    (merged[col].values - merged[m_col].values) /
-                    np.clip(merged[s_col].values, EPS, None)
+            if m_col in df.columns and s_col in df.columns:
+                df[f"csz_{col}"] = (
+                    (df[col].values - df[m_col].values) /
+                    np.clip(df[s_col].values, EPS, None)
                 ).astype(np.float32)
-        new_cols = [c for c in merged.columns if c not in df.columns]
-        for c in new_cols:
-            merged[c] = merged[c].fillna(0).astype(np.float32)
-        for c in new_cols:
-            df[c] = merged[c].values
-        del merged
 
     cs_feats = [c for c in train_agg.columns if c.startswith(("tid_", "csz_"))]
     log(f"  Cross-stock features added: {len(cs_feats)}")
@@ -556,12 +594,8 @@ def add_clusters(train_agg: pd.DataFrame, test_agg: pd.DataFrame):
     sc_full = pd.concat([sc_map, sc_map_te])
     sc_full = sc_full[~sc_full.index.duplicated(keep="first")]
 
-    train_agg = train_agg.merge(
-        sc_full.reset_index().rename(columns={"index": "stock_id"}),
-        on="stock_id", how="left")
-    test_agg = test_agg.merge(
-        sc_full.reset_index().rename(columns={"index": "stock_id"}),
-        on="stock_id", how="left")
+    train_agg["stock_cluster"] = train_agg["stock_id"].map(sc_full).astype(np.int32)
+    test_agg["stock_cluster"]  = test_agg["stock_id"].map(sc_full).astype(np.int32)
 
     # Time clusters
     tp_tr = train_agg.groupby("time_id")[cluster_cols].mean()
@@ -576,12 +610,8 @@ def add_clusters(train_agg: pd.DataFrame, test_agg: pd.DataFrame):
     tc_full = pd.concat([tc_map, tc_map_te])
     tc_full = tc_full[~tc_full.index.duplicated(keep="first")]
 
-    train_agg = train_agg.merge(
-        tc_full.reset_index().rename(columns={"index": "time_id"}),
-        on="time_id", how="left")
-    test_agg = test_agg.merge(
-        tc_full.reset_index().rename(columns={"index": "time_id"}),
-        on="time_id", how="left")
+    train_agg["time_cluster"] = train_agg["time_id"].map(tc_full).astype(np.int32)
+    test_agg["time_cluster"]  = test_agg["time_id"].map(tc_full).astype(np.int32)
 
     for col in ["stock_cluster", "time_cluster"]:
         for df in [train_agg, test_agg]:
@@ -654,7 +684,7 @@ def add_knn_features(train_agg: pd.DataFrame, test_agg: pd.DataFrame):
 
 def add_value_counts(train_agg: pd.DataFrame, test_agg: pd.DataFrame):
     vcount_cols = ["wap_last", "bid_ask_spread_last", "total_volume_last",
-                   "log_volume_last", "price_spread_last", "volume_imbalance_last"]
+                   "log_volume_last", "price_spread_last", "depth_imbalance_last"]
     vcount_cols = [c for c in vcount_cols if c in train_agg.columns]
     N_BINS = 50
 
@@ -813,125 +843,153 @@ def feature_selection(train_agg: pd.DataFrame, test_agg: pd.DataFrame):
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  MAIN
+#  Per-fold pipeline
 # ══════════════════════════════════════════════════════════════════════
 
-def main():
-    log("=" * 60)
-    log("Feature Engineering — Multi-Core Memory-Efficient Pipeline")
-    log(f"  Input  : 0–{INPUT_END-1}s  |  Target : {TARGET_START}–{TOTAL_SECONDS-1}s")
-    log(f"  Buckets: {N_BUCKETS} × {BUCKET_SIZE}s")
-    log(f"  Target : log_rv_diff = log(RV_480-599) - log(RV_360-479)")
-    log(f"  Workers: {N_WORKERS}  |  CPU cores: {cpu_count()}")
-    log("=" * 60)
+def run_fold(fold: int, fold_dir: Path):
+    """
+    Run full feature engineering for one fold.
+    Reads  fold_dir/train.parquet, fold_dir/test.parquet
+    Saves  fold_dir/feature_store_train.parquet
+           fold_dir/feature_store_test.parquet
+           fold_dir/selected_features.txt
+    All train-fit steps are isolated to this fold's train split.
+    """
+    log(f"\n{'━' * 60}")
+    log(f"  FOLD {fold}  —  {fold_dir}")
+    log(f"{'━' * 60}")
 
-    # ── Load ──────────────────────────────────────────────────────
-    log("\nLoading data ...")
-    train_raw = load_raw(DATA_DIR / "train.parquet")
-    test_raw  = load_raw(DATA_DIR / "test.parquet")
-    log(f"  Train: {train_raw.shape}  |  Test: {test_raw.shape}")
+    # ── Per-stock feature building + aggregation ──────────────────
+    log("\n  Building per-stock features + aggregation ...")
 
-    # ── Target ────────────────────────────────────────────────────
-    log("\nComputing targets ...")
-    train_targets = compute_target(train_raw)
-    test_targets  = compute_target(test_raw)
-    log(f"  Train targets: {len(train_targets)}  |  Test: {len(test_targets)}")
-    log(f"  log_rv_diff mean (train): {train_targets['log_rv_diff'].mean():.4f}")
-    log(f"  log_rv_diff std  (train): {train_targets['log_rv_diff'].std():.4f}")
-
-    # ── Per-stock feature building + aggregation ───────────────────
-    log("\nBuilding per-stock features + aggregation ...")
-
-    _ckpt_tr = OUTPUT_DIR / "_checkpoint_train_agg.parquet"
-    _ckpt_te = OUTPUT_DIR / "_checkpoint_test_agg.parquet"
+    _ckpt_tr = fold_dir / "_checkpoint_train_agg.parquet"
+    _ckpt_te = fold_dir / "_checkpoint_test_agg.parquet"
 
     if _ckpt_tr.exists() and _ckpt_te.exists():
-        log("  Found checkpoint files — loading from disk (skipping rebuild)")
+        log("    Found checkpoint — loading from disk")
         train_agg = pd.read_parquet(_ckpt_tr)
         test_agg  = pd.read_parquet(_ckpt_te)
-        del train_raw, test_raw; gc.collect()
     else:
-        train_agg = build_aggregated(train_raw, "Train")
+        # Load train, build features, free raw
+        log("\n  Loading train ...")
+        train_raw = load_raw(fold_dir / "train.parquet")
+        log(f"    Train raw: {train_raw.shape}")
+        train_agg = build_aggregated(train_raw, f"Fold{fold}-Train")
         del train_raw; gc.collect()
 
-        test_agg = build_aggregated(test_raw, "Test")
+        # Load test, build features, free raw
+        log("\n  Loading test ...")
+        test_raw = load_raw(fold_dir / "test.parquet")
+        log(f"    Test raw: {test_raw.shape}")
+        test_agg = build_aggregated(test_raw, f"Fold{fold}-Test")
         del test_raw; gc.collect()
 
         train_agg.to_parquet(_ckpt_tr, index=False)
         test_agg.to_parquet(_ckpt_te, index=False)
-        log(f"  Checkpoint saved → {_ckpt_tr.name}, {_ckpt_te.name}")
+        log(f"    Checkpoint saved")
 
-    log(f"  Train agg: {train_agg.shape}  |  Test agg: {test_agg.shape}")
-    log(f"  Train agg RAM: ~{train_agg.memory_usage(deep=True).sum() / 1e6:.0f} MB")
-    log(f"  Test  agg RAM: ~{test_agg.memory_usage(deep=True).sum() / 1e6:.0f} MB")
+    # ── Targets (computed from raw, need separate load) ───────────
+    log("\n  Computing targets ...")
+    train_raw_tgt = pd.read_parquet(
+        fold_dir / "train.parquet",
+        columns=["stock_id", "time_id", "seconds_in_bucket", "wap"]
+    )
+    train_raw_tgt["stock_id"] = train_raw_tgt["stock_id"].map(
+        {s: parse_stock_id(s) for s in train_raw_tgt["stock_id"].unique()}
+    ).astype(np.int32)
+    train_raw_tgt["log_wap"] = np.log(np.clip(
+        train_raw_tgt["wap"].values.astype(np.float32), 1e-10, None
+    ))
+    train_targets = compute_target(train_raw_tgt)
+    del train_raw_tgt; gc.collect()
+
+    test_raw_tgt = pd.read_parquet(
+        fold_dir / "test.parquet",
+        columns=["stock_id", "time_id", "seconds_in_bucket", "wap"]
+    )
+    test_raw_tgt["stock_id"] = test_raw_tgt["stock_id"].map(
+        {s: parse_stock_id(s) for s in test_raw_tgt["stock_id"].unique()}
+    ).astype(np.int32)
+    test_raw_tgt["log_wap"] = np.log(np.clip(
+        test_raw_tgt["wap"].values.astype(np.float32), 1e-10, None
+    ))
+    test_targets = compute_target(test_raw_tgt)
+    del test_raw_tgt; gc.collect()
+
+    log(f"    Train targets: {len(train_targets)}  |  Test: {len(test_targets)}")
+    log(f"    log_rv_diff mean: {train_targets['log_rv_diff'].mean():.4f}")
+
+    log(f"    Train agg: {train_agg.shape}  |  Test agg: {test_agg.shape}")
+    log(f"    Train RAM: ~{train_agg.memory_usage(deep=True).sum() / 1e6:.0f} MB")
+    log(f"    Test  RAM: ~{test_agg.memory_usage(deep=True).sum() / 1e6:.0f} MB")
 
     # ── Interactions ──────────────────────────────────────────────
-    log("\nAdding interaction features ...")
+    log("\n  Adding interaction features ...")
     train_agg = add_interactions(train_agg)
     test_agg  = add_interactions(test_agg)
     n_int = sum(1 for c in train_agg.columns
                 if c.startswith(("isum_", "idiff_", "irat_", "iprod_")))
-    log(f"  Interaction features: {n_int}")
+    log(f"    Interaction features: {n_int}")
 
     # ── Cross-stock ───────────────────────────────────────────────
-    log("\nCross-stock time_id features ...")
+    log("\n  Cross-stock time_id features ...")
     train_agg, test_agg = add_cross_stock_features(train_agg, test_agg)
 
     # ── Clustering ────────────────────────────────────────────────
-    log("\nClustering (train-fit) ...")
+    log("\n  Clustering (train-fit) ...")
     train_agg, test_agg = add_clusters(train_agg, test_agg)
 
     # ── KNN ───────────────────────────────────────────────────────
-    log("\nKNN features (train-fit index) ...")
+    log("\n  KNN features (train-fit index) ...")
     train_agg, test_agg = add_knn_features(train_agg, test_agg)
 
     # ── Value counts ──────────────────────────────────────────────
-    log("\nValue counts / rarity encoding ...")
+    log("\n  Value counts / rarity encoding ...")
     train_agg, test_agg = add_value_counts(train_agg, test_agg)
 
-    # ── Attach both targets to train ──────────────────────────────
-    train_agg = train_agg.merge(
-        train_targets[["stock_id", "time_id", "log_rv", "log_rv_diff"]],
-        on=["stock_id", "time_id"], how="left"
-    )
+    # ── Attach targets to train ───────────────────────────────────
+    tgt_key = train_targets.set_index(["stock_id", "time_id"])
+    train_idx = pd.MultiIndex.from_frame(train_agg[["stock_id", "time_id"]])
+    train_agg["log_rv"]      = tgt_key["log_rv"].reindex(train_idx).values
+    train_agg["log_rv_diff"] = tgt_key["log_rv_diff"].reindex(train_idx).values
+    del tgt_key, train_idx
 
     # ── Target encoding (against log_rv_diff) ─────────────────────
-    log("\nTarget encoding (5-fold OOF on log_rv_diff) ...")
+    log("\n  Target encoding (5-fold OOF on log_rv_diff) ...")
     train_agg, test_agg = add_target_encoding(train_agg, test_agg)
 
     # ── Feature selection (MI against log_rv_diff) ────────────────
-    log("\nFeature selection ...")
+    log("\n  Feature selection ...")
     feature_cols, mi_map = feature_selection(train_agg, test_agg)
 
-    # ── Attach both targets to test ───────────────────────────────
-    test_agg = test_agg.merge(
-        test_targets[["stock_id", "time_id", "log_rv", "log_rv_diff"]],
-        on=["stock_id", "time_id"], how="left"
-    )
+    # ── Attach targets to test ────────────────────────────────────
+    tgt_key = test_targets.set_index(["stock_id", "time_id"])
+    test_idx = pd.MultiIndex.from_frame(test_agg[["stock_id", "time_id"]])
+    test_agg["log_rv"]      = tgt_key["log_rv"].reindex(test_idx).values
+    test_agg["log_rv_diff"] = tgt_key["log_rv_diff"].reindex(test_idx).values
+    del tgt_key, test_idx
 
     # ── Save ──────────────────────────────────────────────────────
-    log("\nSaving ...")
-    # Save features + both targets (log_rv for eval, log_rv_diff for training)
+    log("\n  Saving ...")
     save_cols = ["stock_id", "time_id"] + feature_cols + ["log_rv", "log_rv_diff"]
     sc_tr = [c for c in save_cols if c in train_agg.columns]
     sc_te = [c for c in save_cols if c in test_agg.columns]
 
-    train_agg[sc_tr].to_parquet(OUTPUT_DIR / "feature_store_train.parquet", index=False)
-    test_agg[sc_te].to_parquet(OUTPUT_DIR / "feature_store_test.parquet",   index=False)
+    train_agg[sc_tr].to_parquet(fold_dir / "feature_store_train.parquet", index=False)
+    test_agg[sc_te].to_parquet(fold_dir / "feature_store_test.parquet", index=False)
 
-    with open(OUTPUT_DIR / "selected_features.txt", "w") as f:
+    with open(fold_dir / "selected_features.txt", "w") as f:
         for c in feature_cols:
             f.write(c + "\n")
 
-    log(f"  Train saved: {train_agg[sc_tr].shape}")
-    log(f"  Test  saved: {test_agg[sc_te].shape}")
-    log(f"  Features:    {len(feature_cols)}")
+    log(f"    Train saved: {train_agg[sc_tr].shape}")
+    log(f"    Test  saved: {test_agg[sc_te].shape}")
+    log(f"    Features:    {len(feature_cols)}")
 
     # Clean up checkpoints
     for ckpt in [_ckpt_tr, _ckpt_te]:
         if ckpt.exists():
             ckpt.unlink()
-            log(f"  Cleaned up {ckpt.name}")
 
     # ── Diagnostics ───────────────────────────────────────────────
     mi_df = (
@@ -939,9 +997,9 @@ def main():
                       "MI": [mi_map.get(c, 0) for c in feature_cols]})
         .sort_values("MI", ascending=False)
     )
-    log("\nTop 20 features by mutual information (vs log_rv_diff):")
+    log(f"\n  Top 20 features by MI (fold {fold}):")
     for _, row in mi_df.head(20).iterrows():
-        log(f"  {row['MI']:.5f}  {row['feature']}")
+        log(f"    {row['MI']:.5f}  {row['feature']}")
 
     groups = {
         "Rolling":       [c for c in feature_cols if "roll_" in c],
@@ -961,11 +1019,58 @@ def main():
         counted.update(cols)
     groups["Base agg"] = [c for c in feature_cols if c not in counted]
 
-    log("\nFeature group counts:")
+    log(f"\n  Feature group counts (fold {fold}):")
     for g, cols in groups.items():
-        log(f"  {g:20s}: {len(cols):4d}")
-    log(f"  {'TOTAL':20s}: {len(feature_cols):4d}")
+        log(f"    {g:20s}: {len(cols):4d}")
+    log(f"    {'TOTAL':20s}: {len(feature_cols):4d}")
 
+    del train_agg, test_agg, train_targets, test_targets
+    gc.collect()
+
+    return len(feature_cols)
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  MAIN
+# ══════════════════════════════════════════════════════════════════════
+
+def main():
+    log("=" * 60)
+    log("Feature Engineering — 5-Fold Pipeline")
+    log(f"  Input  : 0–{INPUT_END-1}s  |  Target : {TARGET_START}–{TOTAL_SECONDS-1}s")
+    log(f"  Buckets: {N_BUCKETS} × {BUCKET_SIZE}s")
+    log(f"  Target : log_rv_diff = log(RV_480-599) - log(RV_360-479)")
+    log(f"  Folds  : {N_FOLDS}")
+    log(f"  Workers: {N_WORKERS}  |  CPU cores: {cpu_count()}")
+    log(f"  Data   : {DATA_DIR}")
+    log("=" * 60)
+
+    fold_feature_counts = []
+
+    for fold in range(N_FOLDS):
+        fold_dir = DATA_DIR / f"fold_{fold}"
+        if (fold_dir / "feature_store_test.parquet").exists():
+            log(f"\n  ⚠ {fold_dir}/train.parquet found — skipping fold {fold}")
+            continue
+
+        n_feats = run_fold(fold, fold_dir)
+        fold_feature_counts.append((fold, n_feats))
+        gc.collect()
+
+    # ── Summary ───────────────────────────────────────────────────
+    log("\n" + "=" * 60)
+    log("Summary")
+    log("-" * 40)
+    for fold, n in fold_feature_counts:
+        log(f"  Fold {fold}: {n} features → processed/fold_{fold}/")
+    log("=" * 60)
+    log("Output structure:")
+    log("  processed/")
+    for fold, _ in fold_feature_counts:
+        log(f"    fold_{fold}/")
+        log(f"      feature_store_train.parquet")
+        log(f"      feature_store_test.parquet")
+        log(f"      selected_features.txt")
     log("\nDone.")
     log("  Inference: log_rv_pred = model.predict(X) + past_log_rv_bkt3")
 
