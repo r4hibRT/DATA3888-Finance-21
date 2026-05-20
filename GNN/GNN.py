@@ -10,8 +10,10 @@ Merged version:
   - Combined RMSPE + QLIKE loss
   - Stratified sampling (oversamples low-RV time_ids)
   - Reads preprocessed .npz from preprocess_gnn.py
-  - Per-tid spread penalty
+  - Per-tid spread penalty  →  now per-STOCK adaptive spread penalty
   - 8 buckets of 60s (finer temporal resolution)
+  - Learnable per-stock bias scalar (stock fixed effect)
+  - Adaptive per-stock spread weight (updated each epoch from spread ratio)
 
 Pipeline:
   eda.ipynb -> processed/fold_{0..4}/{train,test}.parquet
@@ -25,6 +27,7 @@ import gc
 import json
 import time as _time
 import warnings
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -93,8 +96,8 @@ MAMBA_EXPAND          = 2
 
 # Loss weights
 RMSPE_WEIGHT  = 0.5
-QLIKE_WEIGHT  = 0.5
-SPREAD_WEIGHT = 0.1
+QLIKE_WEIGHT  = 0.3
+SPREAD_WEIGHT = 0.2
 
 # Fixed hyperparameters
 FIXED_HPARAMS = {
@@ -108,7 +111,7 @@ FIXED_HPARAMS = {
 
 # Training
 EPOCHS         = 50
-PATIENCE       = 8
+PATIENCE       = 5
 GRAD_CLIP      = 1.0
 BATCH_SIZE     = 16
 
@@ -366,7 +369,8 @@ class ResidualMLPHead(nn.Module):
         return self.output(h)
 
 
-# ── Main model (HAR branch + deviation-from-mean context) ────────────
+# ── Main model ────────────────────────────────────────────────────────
+# HAR branch + deviation-from-mean context + per-stock bias
 
 class SpatioTemporalGNN(nn.Module):
     def __init__(self, input_dim, num_stocks, d_model=128, gat_dropout=0.1,
@@ -413,6 +417,14 @@ class SpatioTemporalGNN(nn.Module):
         # HAR branch: learned blend with GNN
         self.har_branch = nn.Linear(BUCKET_COUNT, 1, bias=True)
         self.har_weight = nn.Parameter(torch.tensor(0.5))
+
+        # ── Per-stock bias (stock fixed effect) ───────────────────────
+        # One learnable scalar per stock. Absorbs systematic level error
+        # (e.g. stocks that are persistently over/under-predicted).
+        # Included in Adam's weight_decay so it is L2-regularised.
+        # Initialised to zero so it starts neutral and learns only what
+        # the GNN cannot explain.
+        self.stock_bias = nn.Parameter(torch.zeros(num_stocks))
 
     def forward(self, X, stock_ids):
         B, N, T, F_dim = X.shape
@@ -483,22 +495,70 @@ class SpatioTemporalGNN(nn.Module):
 
         # 10. Learned blend
         w = torch.sigmoid(self.har_weight)
-        out = w * har_pred + (1 - w) * gnn_pred
+        out = w * har_pred + (1 - w) * gnn_pred               # (B, N)
+
+        # 11. Per-stock bias (stock fixed effect)
+        # stock_ids is (B, N) = arange(num_stocks) repeated per sample,
+        # so column s always corresponds to stock s.
+        bias = self.stock_bias[stock_ids]                      # (B, N)
+        out  = out + bias
 
         return out * live_mask.view(B, N).float()
 
 
-# ── Loss (combined RMSPE + QLIKE + per-tid spread penalty) ───────────
+# ── Loss ──────────────────────────────────────────────────────────────
+# Combined RMSPE + QLIKE + per-stock adaptive spread penalty
 
 class CombinedLoss(nn.Module):
-    def __init__(self, rmspe_w=RMSPE_WEIGHT, qlike_w=QLIKE_WEIGHT,
+    def __init__(self, num_stocks, rmspe_w=RMSPE_WEIGHT, qlike_w=QLIKE_WEIGHT,
                  spread_w=SPREAD_WEIGHT, eps=EPS):
         super().__init__()
-        self.rmspe_w = rmspe_w
-        self.qlike_w = qlike_w
-        self.spread_w = spread_w
-        self.eps = eps
+        self.rmspe_w    = rmspe_w
+        self.qlike_w    = qlike_w
+        self.spread_w   = spread_w
+        self.eps        = eps
+        self.num_stocks = num_stocks
 
+        # Per-stock adaptive spread weights.
+        # Initialised to 1.0 (uniform). Updated after every training epoch
+        # via update_spread_weights(). Stocks that are underdispersed
+        # (pred_std < true_std) receive a larger penalty weight next epoch.
+        # Registered as a buffer so it moves with .to(device) automatically.
+        self.register_buffer("per_stock_spread_w", torch.ones(num_stocks))
+
+    # ------------------------------------------------------------------
+    def update_spread_weights(self, per_stock_pred: dict, per_stock_true: dict):
+        """
+        Call after every training epoch.
+
+        Args:
+            per_stock_pred: {stock_id (int) -> np.ndarray of predicted log-RV}
+            per_stock_true: {stock_id (int) -> np.ndarray of true log-RV}
+
+        Mapping:
+            ratio  = pred_std / true_std
+            weight = clip(2.0 - ratio, 0.25, 4.0)
+              ratio < 1  (underdispersed) → weight > 1  → stronger spread push
+              ratio = 1  (perfect)        → weight = 1  → unchanged
+              ratio > 1  (overdispersed)  → weight < 1  → relaxed penalty
+
+        Weights are normalised to mean=1 so the global SPREAD_WEIGHT budget
+        is preserved across epochs.
+        """
+        weights = torch.ones(self.num_stocks)
+        for s in range(self.num_stocks):
+            if s not in per_stock_pred or len(per_stock_pred[s]) < 3:
+                continue
+            p_std = float(np.std(per_stock_pred[s]))
+            t_std = float(np.std(per_stock_true[s]))
+            if t_std < 1e-6:
+                continue
+            ratio = p_std / t_std
+            weights[s] = float(np.clip(2.0 - ratio, 0.25, 4.0))
+        weights = weights / weights.mean()          # keep global budget
+        self.per_stock_spread_w.copy_(weights)
+
+    # ------------------------------------------------------------------
     def forward(self, pred_log, true_log):
         B, N = pred_log.shape
         live = (true_log != 0.0) & (true_log > LOG_RV_FLOOR)
@@ -517,29 +577,43 @@ class CombinedLoss(nn.Module):
         ratio = true_rv / pred_rv
         qlike = torch.mean(ratio - torch.log(ratio) - 1)
 
-        # Per-time_id spread penalty
+        # Per-stock adaptive spread penalty.
+        # Loops over the stock dimension (N columns) so each stock's
+        # underdispersion is weighted by its historical spread ratio.
         spread_penalties = []
-        for b in range(B):
-            live_b = live[b]
-            if live_b.sum() < 3:
+        for s in range(N):
+            live_s = live[:, s]
+            if live_s.sum() < 3:
                 continue
-            p_b = pred_log[b, live_b].clamp(-20, 5)
-            t_b = true_log[b, live_b]
-            spread_penalties.append(F.relu(t_b.std() - p_b.std()) ** 2)
+            p_s = pred_log[live_s, s].clamp(-20, 5)
+            t_s = true_log[live_s, s]
+            sw  = float(self.per_stock_spread_w[s]) if s < self.num_stocks else 1.0
+            spread_penalties.append(sw * F.relu(t_s.std() - p_s.std()) ** 2)
 
-        spread_loss = torch.stack(spread_penalties).mean() if spread_penalties \
-            else torch.tensor(0.0, device=pred_log.device)
+        spread_loss = (torch.stack(spread_penalties).mean() if spread_penalties
+                       else torch.tensor(0.0, device=pred_log.device))
 
         return self.rmspe_w * rmspe + self.qlike_w * qlike + self.spread_w * spread_loss
 
 
 # ── Training ──────────────────────────────────────────────────────────
 
-def run_epoch(model, loader, loss_fn, device, optimizer=None):
+def run_epoch(model, loader, loss_fn, device, optimizer=None,
+              collect_per_stock=False):
+    """
+    Run one full pass over the data.
+
+    When collect_per_stock=True (training epochs only) the function also
+    accumulates per-stock predicted / true log-RV arrays and returns them
+    as extra dict outputs so train_model can call
+    loss_fn.update_spread_weights() before the next epoch.
+    """
     is_train = optimizer is not None
     model.train() if is_train else model.eval()
     total_loss, total_n = 0.0, 0
     all_pred, all_true = [], []
+    per_stock_pred = defaultdict(list)
+    per_stock_true = defaultdict(list)
     ctx = torch.enable_grad() if is_train else torch.no_grad()
     with ctx:
         for X_b, y_b, _, sid_b in loader:
@@ -553,12 +627,22 @@ def run_epoch(model, loader, loss_fn, device, optimizer=None):
                 nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
                 optimizer.step()
             total_loss += loss.item() * X_b.size(0)
-            total_n += X_b.size(0)
+            total_n    += X_b.size(0)
             with torch.no_grad():
                 live = (y_b != 0.0) & (y_b > LOG_RV_FLOOR)
                 if live.any():
                     all_pred.append(pred[live].detach().cpu().numpy())
                     all_true.append(y_b[live].detach().cpu().numpy())
+                if collect_per_stock:
+                    # Stock index == column index because stock_ids = arange(N)
+                    n_stocks = y_b.shape[1]
+                    for s in range(n_stocks):
+                        live_s = live[:, s]
+                        if live_s.any():
+                            per_stock_pred[s].extend(
+                                pred[live_s, s].detach().cpu().numpy().tolist())
+                            per_stock_true[s].extend(
+                                y_b[live_s, s].cpu().numpy().tolist())
 
     avg_loss = total_loss / max(total_n, 1)
 
@@ -567,11 +651,16 @@ def run_epoch(model, loader, loss_fn, device, optimizer=None):
         t = np.concatenate(all_true)
         pred_rv = np.exp(p).clip(EPS)
         true_rv = np.exp(t).clip(EPS)
-        ratio = true_rv / pred_rv
-        rmspe = float(np.sqrt(np.mean(((pred_rv - true_rv) / true_rv) ** 2)) * 100)
-        qlike = float(np.mean(ratio - np.log(ratio) - 1))
+        ratio   = true_rv / pred_rv
+        rmspe   = float(np.sqrt(np.mean(((pred_rv - true_rv) / true_rv) ** 2)) * 100)
+        qlike   = float(np.mean(ratio - np.log(ratio) - 1))
     else:
         rmspe, qlike = 0.0, 0.0
+
+    if collect_per_stock:
+        ps_pred = {s: np.array(v) for s, v in per_stock_pred.items()}
+        ps_true = {s: np.array(v) for s, v in per_stock_true.items()}
+        return avg_loss, rmspe, qlike, ps_pred, ps_true
 
     return avg_loss, rmspe, qlike
 
@@ -588,16 +677,18 @@ def train_model(num_stocks, train_ds, val_ds, hparams, device,
                                  weight_decay=hparams["weight_decay"])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-6)
-    loss_fn = CombinedLoss()
+
+    # CombinedLoss now takes num_stocks so it can allocate per-stock buffers.
+    # Move to device so the per_stock_spread_w buffer lands on GPU if available.
+    loss_fn = CombinedLoss(num_stocks).to(device)
 
     sampling_weights = train_ds.get_sampling_weights()
     sampler = WeightedRandomSampler(weights=sampling_weights,
                                     num_samples=len(train_ds), replacement=True)
-
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, sampler=sampler,
                               collate_fn=collate_fn, num_workers=0)
-    val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False,
-                            collate_fn=collate_fn, num_workers=0)
+    val_loader   = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False,
+                              collate_fn=collate_fn, num_workers=0)
 
     best_val, best_epoch, no_improve = float("inf"), 0, 0
 
@@ -609,7 +700,19 @@ def train_model(num_stocks, train_ds, val_ds, hparams, device,
 
     for epoch in range(1, EPOCHS + 1):
         t0 = _time.time()
-        tr_loss, tr_rmspe, tr_qlike = run_epoch(model, train_loader, loss_fn, device, optimizer)
+
+        # ── Training pass ────────────────────────────────────────────
+        # collect_per_stock=True gathers per-stock log-RV arrays so we
+        # can update the adaptive spread weights before the next epoch.
+        tr_loss, tr_rmspe, tr_qlike, ps_pred, ps_true = run_epoch(
+            model, train_loader, loss_fn, device, optimizer,
+            collect_per_stock=True)
+
+        # Update per-stock spread weights for the next epoch.
+        # Epoch 1 always runs at uniform weights; epoch 2+ are adaptive.
+        loss_fn.update_spread_weights(ps_pred, ps_true)
+
+        # ── Validation pass ──────────────────────────────────────────
         va_loss, va_rmspe, va_qlike = run_epoch(model, val_loader, loss_fn, device)
         scheduler.step(va_loss)
         elapsed = _time.time() - t0
@@ -621,16 +724,15 @@ def train_model(num_stocks, train_ds, val_ds, hparams, device,
         else:
             no_improve += 1
 
-        if verbose and (epoch % 5 == 0 or no_improve == 0):
-            lr_now = optimizer.param_groups[0]["lr"]
-            flag = " *" if no_improve == 0 else ""
-            log(f"    {epoch:4d} | {tr_loss:8.5f} {tr_rmspe:8.2f}% {tr_qlike:8.5f} | "
-                f"{va_loss:8.5f} {va_rmspe:8.2f}% {va_qlike:8.5f} | "
-                f"{lr_now:.1e} {elapsed:4.0f}s{flag}")
+        lr_now = optimizer.param_groups[0]["lr"]
+        flag   = " *" if no_improve == 0 else ""
+        log(f"    {epoch:4d} | {tr_loss:8.5f} {tr_rmspe:8.2f}% {tr_qlike:8.5f} | "
+            f"{va_loss:8.5f} {va_rmspe:8.2f}% {va_qlike:8.5f} | "
+            f"{lr_now:.1e} {elapsed:4.0f}s{flag}")
 
         if no_improve >= PATIENCE:
             if verbose:
-                log(f"    Early stop at epoch {epoch} (best loss={best_val:.6f} at {best_epoch})")
+                log(f"    Early stop at epoch {epoch} (best={best_val:.6f} at {best_epoch})")
             break
 
     if save_path and save_path.exists():
@@ -644,9 +746,10 @@ def train_model(num_stocks, train_ds, val_ds, hparams, device,
 def run_outer_fold(fold, fold_dir):
     log(f"\n{'=' * 60}")
     log(f"  OUTER FOLD {fold}  |  {fold_dir}  |  {DEVICE}")
-    log(f"  Loss: {RMSPE_WEIGHT}*RMSPE + {QLIKE_WEIGHT}*QLIKE + {SPREAD_WEIGHT}*spread(per-tid)")
+    log(f"  Loss: {RMSPE_WEIGHT}*RMSPE + {QLIKE_WEIGHT}*QLIKE + {SPREAD_WEIGHT}*spread(per-stock adaptive)")
     log(f"  HAR branch: ON (learned blend)")
     log(f"  Global ctx: deviation from mean")
+    log(f"  Stock bias: ON (per-stock fixed effect)")
     log(f"{'=' * 60}")
 
     device = torch.device(DEVICE)
@@ -664,7 +767,7 @@ def run_outer_fold(fold, fold_dir):
     all_tids = sorted(X_train.keys())
     rng = np.random.default_rng(SEED)
     rng.shuffle(all_tids)
-    n_es = max(1, int(len(all_tids) * 0.1))
+    n_es  = max(1, int(len(all_tids) * 0.1))
     es_tids = set(all_tids[:n_es])
     tr_tids = set(all_tids[n_es:])
 
@@ -677,14 +780,52 @@ def run_outer_fold(fold, fold_dir):
 
     model_path = fold_dir / "gnn_model.pt"
     _, final_model = train_model(num_stocks, tr_ds, es_ds, FIXED_HPARAMS, device,
-                                  verbose=True, save_path=model_path)
+                                 verbose=True, save_path=model_path)
+
     n_params = sum(p.numel() for p in final_model.parameters())
-    har_w = torch.sigmoid(final_model.har_weight).item()
+    har_w    = torch.sigmoid(final_model.har_weight).item()
     log(f"  Model params: {n_params:,}")
     log(f"  HAR blend: {har_w:.3f} HAR + {1-har_w:.3f} GNN")
 
-    # Evaluate
-    test_ds = StockDataset(X_test, y_test, num_stocks)
+    # ── Per-stock bias diagnostics ───────────────────────────────────
+    bias_vals = final_model.stock_bias.detach().cpu().numpy()
+    log(f"  Stock bias: mean={bias_vals.mean():.4f}  std={bias_vals.std():.4f}  "
+        f"min={bias_vals.min():.4f}  max={bias_vals.max():.4f}")
+    top_pos = np.argsort(bias_vals)[-3:][::-1]
+    top_neg = np.argsort(bias_vals)[:3]
+    log(f"  Largest +bias stocks: "
+        + ", ".join(f"stock {s} ({bias_vals[s]:+.3f})" for s in top_pos))
+    log(f"  Largest -bias stocks: "
+        + ", ".join(f"stock {s} ({bias_vals[s]:+.3f})" for s in top_neg))
+
+    # ── Adaptive spread-weight diagnostics ───────────────────────────
+    # Re-create loss_fn to read final spread weights (model_path already saved)
+    loss_fn_diag = CombinedLoss(num_stocks).to(device)
+    # Run one training pass to populate weights (reuse tr_ds)
+    tr_loader_diag = DataLoader(tr_ds, batch_size=BATCH_SIZE, shuffle=False,
+                                collate_fn=collate_fn, num_workers=0)
+    final_model.eval()
+    ps_pred_d, ps_true_d = defaultdict(list), defaultdict(list)
+    with torch.no_grad():
+        for X_b, y_b, _, sid_b in tr_loader_diag:
+            X_b, sid_b = X_b.to(device), sid_b.to(device)
+            pred = final_model(X_b, sid_b)
+            live = (y_b != 0.0) & (y_b > LOG_RV_FLOOR)
+            for s in range(y_b.shape[1]):
+                ls = live[:, s]
+                if ls.any():
+                    ps_pred_d[s].extend(pred[ls, s].cpu().numpy().tolist())
+                    ps_true_d[s].extend(y_b[ls, s].numpy().tolist())
+    loss_fn_diag.update_spread_weights(
+        {s: np.array(v) for s, v in ps_pred_d.items()},
+        {s: np.array(v) for s, v in ps_true_d.items()})
+    sw_vals = loss_fn_diag.per_stock_spread_w.cpu().numpy()
+    log(f"  Spread weights (final): mean={sw_vals.mean():.3f}  "
+        f"std={sw_vals.std():.3f}  "
+        f"max={sw_vals.max():.2f}x (stock {int(sw_vals.argmax())})")
+
+    # ── Evaluate on test set ─────────────────────────────────────────
+    test_ds     = StockDataset(X_test, y_test, num_stocks)
     test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False,
                              collate_fn=collate_fn, num_workers=0)
 
@@ -700,9 +841,9 @@ def run_outer_fold(fold, fold_dir):
             all_tids_out.extend(tid_b)
             all_live.append(live.cpu().numpy())
 
-    pred_log = np.concatenate(all_pred, axis=0)
-    true_log = np.concatenate(all_true, axis=0)
-    live_mask = np.concatenate(all_live, axis=0)
+    pred_log  = np.concatenate(all_pred,  axis=0)
+    true_log  = np.concatenate(all_true,  axis=0)
+    live_mask = np.concatenate(all_live,  axis=0)
 
     test_m = compute_metrics(pred_log[live_mask], true_log[live_mask])
     log(f"\n  Outer test metrics:")
@@ -716,14 +857,14 @@ def run_outer_fold(fold, fold_dir):
         f"ratio={pred_std/true_std:.3f}")
 
     # Per-RV-tier
-    pred_flat = pred_log[live_mask]
-    true_flat = true_log[live_mask]
+    pred_flat    = pred_log[live_mask]
+    true_flat    = true_log[live_mask]
     true_rv_flat = np.exp(true_flat)
     log(f"\n  By RV tier:")
     for name, lo, hi in [("Very low (<0.001)", 0, 0.001),
                           ("Low (0.001-0.005)", 0.001, 0.005),
                           ("Mid (0.005-0.02)",  0.005, 0.02),
-                          ("High (>=0.02)",     0.02, np.inf)]:
+                          ("High (>=0.02)",     0.02,  np.inf)]:
         mask = (true_rv_flat >= lo) & (true_rv_flat < hi)
         if mask.sum() < 10:
             continue
@@ -741,30 +882,50 @@ def run_outer_fold(fold, fold_dir):
         sorted_stocks = sorted(stock_metrics.items(), key=lambda x: x[1]["RMSPE%"])
         log(f"\n  Best 5 stocks:")
         for sid, m in sorted_stocks[:5]:
-            log(f"    Stock {sid}: RMSPE%={m['RMSPE%']:.2f}  QLIKE={m['QLIKE']:.6f}")
+            log(f"    Stock {sid}: RMSPE%={m['RMSPE%']:.2f}  QLIKE={m['QLIKE']:.6f}  "
+                f"bias={bias_vals[sid]:+.4f}")
         log(f"  Worst 5 stocks:")
         for sid, m in sorted_stocks[-5:]:
-            log(f"    Stock {sid}: RMSPE%={m['RMSPE%']:.2f}  QLIKE={m['QLIKE']:.6f}")
+            log(f"    Stock {sid}: RMSPE%={m['RMSPE%']:.2f}  QLIKE={m['QLIKE']:.6f}  "
+                f"bias={bias_vals[sid]:+.4f}")
 
-    # Save
+    # Save predictions
     rows = [{"time_id": all_tids_out[i], "stock_id": s,
              "pred_log_rv": float(np.clip(pred_log[i, s], -20, 5)),
              "true_log_rv": float(true_log[i, s]),
-             "pred_rv": float(np.exp(np.clip(pred_log[i, s], -20, 5))),
-             "true_rv": float(np.exp(true_log[i, s]))}
+             "pred_rv":     float(np.exp(np.clip(pred_log[i, s], -20, 5))),
+             "true_rv":     float(np.exp(true_log[i, s])),
+             "stock_bias":  float(bias_vals[s])}
             for i in range(n_tids) for s in range(n_stocks_out) if live_mask[i, s]]
     pd.DataFrame(rows).to_csv(fold_dir / "gnn_predictions.csv", index=False)
 
+    # Save metadata
     with open(fold_dir / "gnn_best_params.json", "w") as f:
-        json.dump({"hparams": FIXED_HPARAMS, "n_params": n_params,
-                   "har_blend_weight": har_w,
-                   "spread_diagnostic": {"pred_std": pred_std, "true_std": true_std},
-                   "loss": f"{RMSPE_WEIGHT}*RMSPE+{QLIKE_WEIGHT}*QLIKE+{SPREAD_WEIGHT}*spread",
-                   "global_ctx": "deviation_from_mean",
-                   "test_metrics": test_m}, f, indent=2, default=str)
+        json.dump({
+            "hparams":            FIXED_HPARAMS,
+            "n_params":           n_params,
+            "har_blend_weight":   har_w,
+            "stock_bias": {
+                "mean": float(bias_vals.mean()),
+                "std":  float(bias_vals.std()),
+                "min":  float(bias_vals.min()),
+                "max":  float(bias_vals.max()),
+            },
+            "spread_weights": {
+                "mean": float(sw_vals.mean()),
+                "std":  float(sw_vals.std()),
+                "max":  float(sw_vals.max()),
+                "argmax": int(sw_vals.argmax()),
+            },
+            "spread_diagnostic": {"pred_std": pred_std, "true_std": true_std},
+            "loss":       f"{RMSPE_WEIGHT}*RMSPE+{QLIKE_WEIGHT}*QLIKE+{SPREAD_WEIGHT}*spread(per-stock-adaptive)",
+            "global_ctx": "deviation_from_mean",
+            "test_metrics": test_m,
+        }, f, indent=2, default=str)
     log(f"  Saved -> {fold_dir}/gnn_*")
 
-    del final_model, tr_ds, es_ds, test_ds; gc.collect()
+    del final_model, tr_ds, es_ds, test_ds
+    gc.collect()
     if DEVICE == "cuda":
         torch.cuda.empty_cache()
     return test_m
@@ -774,7 +935,7 @@ def run_outer_fold(fold, fold_dir):
 
 def main():
     log("=" * 60)
-    log("Spatio-Temporal GNN (merged: HAR + deviation ctx + per-epoch metrics)")
+    log("Spatio-Temporal GNN (HAR + deviation ctx + per-stock bias + adaptive spread)")
     log(f"  Input      : .npz ({BUCKET_COUNT} buckets x {INPUT_DIM} features)")
     log(f"  Bucket     : {BUCKET_SIZE}s ({BUCKET_COUNT} buckets)")
     log(f"  Target     : log(RV) of seconds {TARGET_START}-{TOTAL_SECONDS-1}")
@@ -782,6 +943,8 @@ def main():
     log(f"  Mamba/Graph/Attn: {USE_MAMBA}/{USE_LEARNED_GRAPH}/{USE_CROSS_ATTN}")
     log(f"  HAR branch : ON (learned blend)")
     log(f"  Global ctx : deviation from mean")
+    log(f"  Stock bias : ON (per-stock fixed effect, L2-regularised)")
+    log(f"  Spread w   : adaptive per-stock (updated each epoch)")
     log(f"  Loss       : {RMSPE_WEIGHT}*RMSPE + {QLIKE_WEIGHT}*QLIKE + {SPREAD_WEIGHT}*spread")
     log(f"  Sampling   : stratified (inverse RV)")
     log(f"  Folds      : {N_OUTER_FOLDS}")
@@ -812,17 +975,24 @@ def main():
             log(f"  {k:12s}: {np.mean(vals):.6f} +/- {np.std(vals):.6f}")
 
     with open(DATA_DIR / "gnn_nested_cv_summary.json", "w") as f:
-        json.dump({"n_outer_folds": len(all_metrics), "hparams": FIXED_HPARAMS,
-                   "bucket_size": BUCKET_SIZE, "bucket_count": BUCKET_COUNT,
-                   "loss": f"{RMSPE_WEIGHT}*RMSPE+{QLIKE_WEIGHT}*QLIKE+{SPREAD_WEIGHT}*spread",
-                   "har_branch": True, "global_ctx": "deviation_from_mean",
-                   "device": DEVICE, "per_fold_metrics": all_metrics,
-                   "mean_metrics": {k: float(np.mean([m[k] for m in all_metrics]))
-                                    for k in metric_keys} if all_metrics else {},
-                   "std_metrics": {k: float(np.std([m[k] for m in all_metrics]))
-                                   for k in metric_keys} if all_metrics else {}},
-                  f, indent=2, default=str)
+        json.dump({
+            "n_outer_folds": len(all_metrics),
+            "hparams":       FIXED_HPARAMS,
+            "bucket_size":   BUCKET_SIZE,
+            "bucket_count":  BUCKET_COUNT,
+            "loss":          f"{RMSPE_WEIGHT}*RMSPE+{QLIKE_WEIGHT}*QLIKE+{SPREAD_WEIGHT}*spread(per-stock-adaptive)",
+            "har_branch":    True,
+            "stock_bias":    True,
+            "global_ctx":    "deviation_from_mean",
+            "device":        DEVICE,
+            "per_fold_metrics": all_metrics,
+            "mean_metrics":  {k: float(np.mean([m[k] for m in all_metrics]))
+                              for k in metric_keys} if all_metrics else {},
+            "std_metrics":   {k: float(np.std([m[k] for m in all_metrics]))
+                              for k in metric_keys} if all_metrics else {},
+        }, f, indent=2, default=str)
     log(f"\nDone.")
+
 
 if __name__ == "__main__":
     main()
