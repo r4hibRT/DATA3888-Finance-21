@@ -95,8 +95,8 @@ MAMBA_D_CONV          = 2
 MAMBA_EXPAND          = 2
 
 # Loss weights
-RMSPE_WEIGHT  = 0.5
-QLIKE_WEIGHT  = 0.3
+RMSPE_WEIGHT  = 0.3
+QLIKE_WEIGHT  = 0.5
 SPREAD_WEIGHT = 0.2
 
 # Fixed hyperparameters
