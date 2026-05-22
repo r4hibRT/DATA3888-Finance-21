@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 import pandas as pd
@@ -475,6 +476,70 @@ def naive_last_2min_prediction(
     return np.clip(frame["rv_360_480"].to_numpy(dtype=float), prediction_floor, None)
 
 
+def prediction_latency_summary(
+    model: dict[str, object],
+    frame: pd.DataFrame,
+    prediction_floor: float,
+    repeats: int,
+) -> dict[str, float]:
+    repeats = max(1, repeats)
+    if len(frame) == 0:
+        raise ValueError("Need at least one row to benchmark prediction latency.")
+
+    # Warm up numpy/pandas paths once so the repeated timings focus on prediction.
+    inverse_log_rv(predict_linear_regression(model, frame), prediction_floor)
+
+    timings = []
+    for _ in range(repeats):
+        start = perf_counter()
+        inverse_log_rv(predict_linear_regression(model, frame), prediction_floor)
+        timings.append(perf_counter() - start)
+
+    timings_array = np.asarray(timings, dtype=float)
+    mean_seconds = float(timings_array.mean())
+    return {
+        "prediction_rows": float(len(frame)),
+        "latency_repeats": float(repeats),
+        "prediction_seconds_mean": mean_seconds,
+        "prediction_seconds_median": float(np.median(timings_array)),
+        "prediction_seconds_min": float(timings_array.min()),
+        "prediction_seconds_max": float(timings_array.max()),
+        "prediction_microseconds_per_row": (mean_seconds / len(frame)) * 1_000_000,
+        "prediction_rows_per_second": len(frame) / mean_seconds if mean_seconds > 0 else np.inf,
+    }
+
+
+def latency_row(
+    fold_id: int | str,
+    feature_build_seconds: float,
+    fit_evaluate_seconds: float,
+    pipeline_seconds_before_csv: float,
+    latency: dict[str, float],
+) -> dict[str, float | int | str]:
+    return {
+        "fold_id": fold_id,
+        "feature_build_seconds": feature_build_seconds,
+        "fit_evaluate_seconds": fit_evaluate_seconds,
+        "pipeline_seconds_before_csv": pipeline_seconds_before_csv,
+        **latency,
+    }
+
+
+def print_prediction_latency(latency: dict[str, float]) -> None:
+    print("\nPrediction latency")
+    print(f"Rows predicted: {int(latency['prediction_rows']):,}")
+    print(f"Mean prediction time: {latency['prediction_seconds_mean']:.6f} sec")
+    print(f"Median prediction time: {latency['prediction_seconds_median']:.6f} sec")
+    print(
+        "Mean per-row latency: "
+        f"{latency['prediction_microseconds_per_row']:.6f} microseconds"
+    )
+    print(
+        "Throughput: "
+        f"{latency['prediction_rows_per_second']:,.2f} rows/sec"
+    )
+
+
 def volatility_metrics(
     y_true: pd.Series | np.ndarray,
     y_pred: pd.Series | np.ndarray,
@@ -868,6 +933,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--metrics-out", type=Path, default=Path("har_rv_metrics.csv"))
     parser.add_argument("--model-out", type=Path, default=Path("har_rv_model_coefficients.csv"))
     parser.add_argument("--cv-out", type=Path, default=Path("har_rv_cv_metrics.csv"))
+    parser.add_argument("--latency-out", type=Path, default=Path("har_rv_latency.csv"))
+    parser.add_argument(
+        "--latency-repeats",
+        type=int,
+        default=25,
+        help="Number of repeated prediction-only timings to run on the test rows.",
+    )
     return parser.parse_args()
 
 
@@ -884,16 +956,22 @@ def main() -> None:
         all_predictions = []
         all_metrics = []
         all_coefficients = []
+        all_latency = []
         fold_dirs = discover_fold_dirs(args.folds_root, args.folds)
 
         print("HAR-RV shared-fold CV")
         print(f"Folds root: {args.folds_root}")
         for fold_id, fold_dir in fold_dirs:
             print(f"\n=== Fold {fold_id}: {fold_dir} ===")
+            fold_start = perf_counter()
+            feature_start = perf_counter()
             train_data, test_data = load_fold_har_rv_dataset(
                 fold_dir,
                 max_files=args.max_files,
             )
+            feature_build_seconds = perf_counter() - feature_start
+
+            fit_start = perf_counter()
             model, metrics, coefficients, predictions = fit_and_evaluate_har_rv_split(
                 train_data,
                 test_data,
@@ -901,6 +979,19 @@ def main() -> None:
                 min_target_rv=args.min_target_rv,
                 prediction_floor=args.prediction_floor,
             )
+            fit_evaluate_seconds = perf_counter() - fit_start
+
+            test_model_data, _ = prepare_har_model_data(
+                test_data,
+                min_target_rv=args.min_target_rv,
+            )
+            latency = prediction_latency_summary(
+                model,
+                test_model_data,
+                prediction_floor=args.prediction_floor,
+                repeats=args.latency_repeats,
+            )
+            pipeline_seconds_before_csv = perf_counter() - fold_start
 
             metrics.insert(0, "fold_id", fold_id)
             predictions.insert(0, "fold_id", fold_id)
@@ -923,13 +1014,24 @@ def main() -> None:
             all_predictions.append(predictions)
             all_metrics.append(metrics)
             all_coefficients.append(coefficients)
+            all_latency.append(
+                latency_row(
+                    fold_id,
+                    feature_build_seconds,
+                    fit_evaluate_seconds,
+                    pipeline_seconds_before_csv,
+                    latency,
+                )
+            )
 
             print("Fold metrics")
             print(metrics.to_string(index=False))
+            print_prediction_latency(latency)
 
         predictions = pd.concat(all_predictions, ignore_index=True)
         fold_metrics = pd.concat(all_metrics, ignore_index=True)
         coefficients = pd.concat(all_coefficients, ignore_index=True)
+        latency = pd.DataFrame(all_latency)
         cv_metrics = summarise_fold_cv_metrics(
             fold_metrics,
             predictions,
@@ -940,26 +1042,35 @@ def main() -> None:
         cv_metrics.to_csv(args.metrics_out, index=False)
         cv_metrics.to_csv(args.cv_out, index=False)
         coefficients.to_csv(args.model_out, index=False)
+        latency.to_csv(args.latency_out, index=False)
         model_metrics_out = args.model_out.with_name(f"{args.model_out.stem}_metrics.csv")
         cv_metrics.to_csv(model_metrics_out, index=False)
 
         print("\nCV metrics")
         print(cv_metrics.to_string(index=False))
+        print("\nLatency summary")
+        print(latency.to_string(index=False))
         print(f"\nSaved predictions: {args.predictions_out.resolve()}")
         print(f"Saved metrics: {args.metrics_out.resolve()}")
         print(f"Saved cross-validation metrics: {args.cv_out.resolve()}")
         print(f"Saved fold coefficients: {args.model_out.resolve()}")
         print(f"Saved coefficient metrics: {model_metrics_out.resolve()}")
+        print(f"Saved latency metrics: {args.latency_out.resolve()}")
         return
 
     if args.fold_dir is not None:
         if args.features_in is not None:
             raise ValueError("--fold-dir cannot be combined with --features-in.")
 
+        fold_start = perf_counter()
+        feature_start = perf_counter()
         train_data, test_data = load_fold_har_rv_dataset(
             args.fold_dir,
             max_files=args.max_files,
         )
+        feature_build_seconds = perf_counter() - feature_start
+
+        fit_start = perf_counter()
         model, metrics, coefficients, predictions = fit_and_evaluate_har_rv_split(
             train_data,
             test_data,
@@ -967,8 +1078,34 @@ def main() -> None:
             min_target_rv=args.min_target_rv,
             prediction_floor=args.prediction_floor,
         )
+        fit_evaluate_seconds = perf_counter() - fit_start
+
+        test_model_data, _ = prepare_har_model_data(
+            test_data,
+            min_target_rv=args.min_target_rv,
+        )
+        latency = prediction_latency_summary(
+            model,
+            test_model_data,
+            prediction_floor=args.prediction_floor,
+            repeats=args.latency_repeats,
+        )
+        pipeline_seconds_before_csv = perf_counter() - fold_start
+        latency = pd.DataFrame(
+            [
+                latency_row(
+                    args.fold_dir.name,
+                    feature_build_seconds,
+                    fit_evaluate_seconds,
+                    pipeline_seconds_before_csv,
+                    latency,
+                )
+            ]
+        )
+
         predictions.to_csv(args.predictions_out, index=False)
         metrics.to_csv(args.metrics_out, index=False)
+        latency.to_csv(args.latency_out, index=False)
         save_model_summary(model, coefficients, metrics, args.model_out)
 
         print(f"HAR-RV train dataset shape: {train_data.shape}")
@@ -978,11 +1115,15 @@ def main() -> None:
         print(f"Saved predictions: {args.predictions_out.resolve()}")
         print(f"Saved metrics: {args.metrics_out.resolve()}")
         print(f"Saved model coefficients: {args.model_out.resolve()}")
+        print(f"Saved latency metrics: {args.latency_out.resolve()}")
         print("Cross-validation skipped: explicit fold train/test split was used.")
         print("\nFold holdout metrics")
         print(metrics.to_string(index=False))
         print("\nModel coefficients")
         print(coefficients.to_string(index=False))
+        print("\nRuntime summary")
+        print(latency.to_string(index=False))
+        print_prediction_latency(latency.iloc[0].to_dict())
         return
 
     if args.features_in is not None:
