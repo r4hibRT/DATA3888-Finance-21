@@ -17,7 +17,7 @@ import pandas as pd
 
 
 EPS = 1e-12
-MIN_TARGET_RV = 1e-5
+MIN_TARGET_RV = 1e-4
 PREDICTION_FLOOR = MIN_TARGET_RV
 TARGET_COL = "target_rv_480_600"
 
@@ -480,17 +480,14 @@ def volatility_metrics(
     y_pred: pd.Series | np.ndarray,
     eps: float = EPS,
 ) -> dict[str, float]:
-    y_true = np.asarray(y_true, dtype=float)
+    y_true = np.clip(np.asarray(y_true, dtype=float), eps, None)
     y_pred = np.clip(np.asarray(y_pred, dtype=float), eps, None)
-    percentage_error = (y_true - y_pred) / np.clip(y_true, eps, None)
-
-    true_var = np.square(np.clip(y_true, eps, None))
-    pred_var = np.square(y_pred)
-    ratio = true_var / np.clip(pred_var, eps, None)
+    percentage_error = (y_true - y_pred) / y_true
+    ratio = y_true / y_pred
 
     return {
         "RMSPE": float(np.sqrt(np.mean(np.square(percentage_error)))),
-        "QLIKE": float(np.mean(ratio - np.log(np.clip(ratio, eps, None)) - 1.0)),
+        "QLIKE": float(np.mean(ratio - np.log(ratio) - 1.0)),
         "MSE": float(np.mean(np.square(y_true - y_pred))),
     }
 
