@@ -1,0 +1,39 @@
+{
+  "hparams": {
+    "d_model": 128,
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "gat_dropout": 0.1,
+    "mlp_hidden": 128,
+    "final_dropout": 0.2
+  },
+  "n_params": 890617,
+  "har_blend_weight": 0.6190826296806335,
+  "stock_bias": {
+    "mean": 0.04227624833583832,
+    "std": 0.0603029727935791,
+    "min": -0.35535818338394165,
+    "max": 0.11482857912778854
+  },
+  "spread_weights": {
+    "mean": 1.0,
+    "std": 0.033147286623716354,
+    "max": 1.095088243484497,
+    "argmax": 33
+  },
+  "spread_diagnostic": {
+    "pred_std": 0.6488965749740601,
+    "true_std": 0.7057079076766968
+  },
+  "loss": "0.3*RMSPE+0.5*QLIKE+0.2*spread(per-stock-adaptive)",
+  "global_ctx": "deviation_from_mean",
+  "test_metrics": {
+    "QLIKE": 0.07168973237276077,
+    "RMSE": 0.0007703258306719363,
+    "MAPE%": 24.150936126708984,
+    "RMSPE%": 37.88806915283203,
+    "MAE_log": 0.25556448101997375,
+    "MSE_log_rv": 0.12151701748371124,
+    "MSE_rv": 5.93401864534826e-07
+  }
+}
