@@ -146,26 +146,26 @@ def hi(text, size="22px", color=TEXT_HI, mono=True):
 
 def label(text):
     return html.Div(text, style={
-        "color": TEXT_DIM, "fontSize": "9px", "letterSpacing": "2px",
+        "color": TEXT_DIM, "fontSize": "11px", "letterSpacing": "1px",
         "fontWeight": "500", "marginBottom": "6px", "textTransform": "uppercase",
     })
 
 def section_title(text):
     return html.Div(text, style={
-        "fontFamily": "'Syne', sans-serif", "fontSize": "11px", "fontWeight": "700",
-        "color": TEXT_DIM, "letterSpacing": "2.5px", "marginBottom": "12px",
+        "fontFamily": "'Syne', sans-serif", "fontSize": "12px", "fontWeight": "700",
+        "color": TEXT_MID, "letterSpacing": "1.5px", "marginBottom": "12px",
         "textTransform": "uppercase",
     })
 
 def metric_chip(lbl, val, accent=BORDER, unit=""):
     return html.Div([
-        html.Div(lbl, style={"color": TEXT_DIM, "fontSize": "9px",
-                             "letterSpacing": "1.5px", "marginBottom": "5px"}),
+        html.Div(lbl, style={"color": TEXT_DIM, "fontSize": "11px",
+                             "letterSpacing": "0.8px", "marginBottom": "5px"}),
         html.Div([
             html.Span(val, style={"color": TEXT_HI, "fontSize": "19px",
                                   "fontWeight": "600",
                                   "fontFamily": "'JetBrains Mono', monospace"}),
-            html.Span(f" {unit}", style={"color": TEXT_DIM, "fontSize": "10px"})
+            html.Span(f" {unit}", style={"color": TEXT_DIM, "fontSize": "11px"})
             if unit else None,
         ]),
     ], style={
@@ -178,6 +178,7 @@ def metric_chip(lbl, val, accent=BORDER, unit=""):
 
 app = Dash(
     __name__,
+    assets_folder="asset",
     external_stylesheets=[
         dbc.themes.DARKLY,
         "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&"
@@ -202,12 +203,12 @@ HEADER = html.Div([
             html.Div(
                 f"{len(STOCKS)} stocks · {len(TIME_IDS):,} snapshots · "
                 f"{len(AVAILABLE_MODELS)} models loaded",
-                style={"color": TEXT_DIM, "fontSize": "10px", "marginTop": "3px"}
+                style={"color": TEXT_MID, "fontSize": "12px", "marginTop": "3px"}
             ),
         ]),
         html.Div([
-            html.Div("MODEL", style={"color": TEXT_DIM, "fontSize": "9px",
-                                     "letterSpacing": "2px", "marginBottom": "7px"}),
+            html.Div("MODEL", style={"color": TEXT_DIM, "fontSize": "11px",
+                                     "letterSpacing": "1px", "marginBottom": "7px"}),
             dbc.RadioItems(
                 id="model-sel",
                 options=[{"label": html.Span([
@@ -225,39 +226,6 @@ HEADER = html.Div([
         "backgroundColor": BG_CARD,
     }),
 
-    # Snapshot bar
-    html.Div([
-        html.Div([
-            html.Div("SNAPSHOT", style={"color": TEXT_DIM, "fontSize": "9px",
-                                        "letterSpacing": "2px", "marginBottom": "8px"}),
-            html.Div([
-                dcc.Slider(
-                    id="tid-slider", min=0, max=len(TIME_IDS) - 1, step=1, value=0,
-                    marks={i: {"label": str(TIME_IDS[i]),
-                               "style": {"color": TEXT_DIM, "fontSize": "9px"}}
-                           for i in range(0, len(TIME_IDS),
-                                         max(1, len(TIME_IDS) // 10))},
-                    tooltip={"placement": "top", "always_visible": False},
-                    className="snapshot-slider",
-                ),
-            ], style={"flex": "1", "minWidth": "0"}),
-            dcc.Dropdown(
-                id="tid-dd",
-                options=[{"label": f"Snapshot {t}", "value": i}
-                         for i, t in enumerate(TIME_IDS)],
-                value=0, clearable=False,
-                style={"width": "165px", "backgroundColor": BG_CARD,
-                       "border": f"1px solid {BORDER}", "color": TEXT_HI},
-                className="snapshot-dd",
-            ),
-        ], style={"display": "flex", "alignItems": "center", "gap": "20px",
-                  "flex": "1", "minWidth": "0"}),
-        html.Div(id="snapshot-badge", style={"whiteSpace": "nowrap"}),
-    ], style={
-        "display": "flex", "alignItems": "center", "gap": "24px",
-        "padding": "12px 28px", "borderBottom": f"1px solid {BORDER}",
-        "backgroundColor": "#08111a",
-    }),
 ], style={"position": "sticky", "top": "0", "zIndex": "100"})
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -265,6 +233,29 @@ HEADER = html.Div([
 # ══════════════════════════════════════════════════════════════════════════════
 
 TAB_MONITOR = html.Div([
+
+    # ── Snapshot bar (Monitor tab only) ───────────────────────────────────────
+    html.Div([
+        html.Div([
+            html.Div("SNAPSHOT", style={"color": TEXT_DIM, "fontSize": "11px",
+                                        "letterSpacing": "1px", "marginBottom": "8px"}),
+            dcc.Dropdown(
+                id="tid-dd",
+                options=[{"label": f"Snapshot {t}", "value": i}
+                         for i, t in enumerate(TIME_IDS)],
+                value=0, clearable=False,
+                style={"width": "220px", "backgroundColor": BG_CARD,
+                       "border": f"1px solid {BORDER}", "color": TEXT_HI},
+                className="snapshot-dd",
+            ),
+        ], style={"display": "flex", "alignItems": "center", "gap": "16px"}),
+        html.Div(id="snapshot-badge", style={"whiteSpace": "nowrap"}),
+    ], style={
+        "display": "flex", "alignItems": "center", "gap": "24px",
+        "padding": "10px 28px", "borderBottom": f"1px solid {BORDER}",
+        "backgroundColor": "#08111a",
+    }),
+
     html.Div([
 
         # ── Left ──────────────────────────────────────────────────────────────
@@ -278,7 +269,7 @@ TAB_MONITOR = html.Div([
                 html.Div([
                     section_title("Portfolio Risk Map"),
                     html.Div("ranked by predicted RV · colour = regime",
-                             style={"color": TEXT_DIM, "fontSize": "10px",
+                             style={"color": TEXT_MID, "fontSize": "12px",
                                     "marginTop": "-8px", "marginBottom": "10px"}),
                 ]),
                 dcc.Graph(id="heatmap", config={"displayModeBar": False},
@@ -290,7 +281,7 @@ TAB_MONITOR = html.Div([
                     html.Div([
                         section_title("Risk Table"),
                         html.Div("click ★ to watchlist · click row to inspect",
-                                 style={"color": TEXT_DIM, "fontSize": "10px",
+                                 style={"color": TEXT_MID, "fontSize": "12px",
                                         "marginTop": "-8px", "marginBottom": "10px"}),
                     ]),
                     dbc.Button("Export CSV", id="export-btn", size="sm", outline=True,
@@ -344,11 +335,6 @@ TAB_MONITOR = html.Div([
                 section_title("Regime Distribution"),
                 dcc.Graph(id="regime-bars", config={"displayModeBar": False},
                           style={"height": "155px"}),
-            ], style={"marginBottom": "14px"}),
-
-            card([
-                section_title("Model Leaderboard by Regime  ·  QLIKE"),
-                html.Div(id="regime-leaderboard"),
             ]),
         ], style={"width": "430px", "flexShrink": "0", "display": "flex",
                   "flexDirection": "column"}),
@@ -398,7 +384,7 @@ TAB_BUCKETS = html.Div([
                             {"label": "Bar", "value": "bar"},
                             {"label": "Line", "value": "line"},
                         ],
-                        value="bar", inline=True,
+                        value="line", inline=True,
                         style={"display": "flex", "gap": "14px"},
                         className="model-radio",
                     ),
@@ -418,18 +404,23 @@ TAB_BUCKETS = html.Div([
 
         # Charts row
         html.Div([
-            # Main bucket bar / line chart (includes predicted value)
+            # Main bucket bar / line chart — PRIMARY focus
             html.Div([
                 card([
-                    section_title("RV Bucket History"),
-                    html.Div(
-                        "rv_b0 = most recent bucket · rv_b3 = oldest · rv_target = forecast target · pred = model prediction",
-                        style={"color": TEXT_DIM, "fontSize": "10px",
-                               "marginTop": "-8px", "marginBottom": "10px"}
-                    ),
+                    html.Div([
+                        html.Div("RV BUCKET HISTORY", style={
+                            "fontFamily": "'Syne', sans-serif", "fontSize": "14px",
+                            "fontWeight": "800", "color": TEXT_HI,
+                            "letterSpacing": "3px", "marginBottom": "4px",
+                        }),
+                        html.Div(
+                            "rv_b0 = most recent · rv_b3 = oldest · rv_target = forecast target · pred = model",
+                            style={"color": TEXT_MID, "fontSize": "12px", "marginBottom": "10px"},
+                        ),
+                    ]),
                     dcc.Graph(id="bkt-main-chart", config={"displayModeBar": False},
-                              style={"height": "320px"}),
-                ]),
+                              style={"height": "380px"}),
+                ], glow=ACCENT),
             ], style={"flex": "2", "minWidth": "0"}),
 
             # Cross-stock distribution
@@ -438,14 +429,29 @@ TAB_BUCKETS = html.Div([
                     section_title("Cross-Stock RV Profile"),
                     html.Div(
                         "selected stock vs portfolio distribution at this snapshot",
-                        style={"color": TEXT_DIM, "fontSize": "10px",
+                        style={"color": TEXT_MID, "fontSize": "12px",
                                "marginTop": "-8px", "marginBottom": "10px"}
                     ),
                     dcc.Graph(id="bkt-cross-chart", config={"displayModeBar": False},
-                              style={"height": "320px"}),
+                              style={"height": "380px"}),
                 ]),
             ], style={"flex": "1", "minWidth": "0"}),
-        ], style={"display": "flex", "gap": "14px"}),
+        ], style={"display": "flex", "gap": "14px", "marginBottom": "14px"}),
+
+        # ── Regime Leaderboard (prominent, full-width) ────────────────────────
+        card([
+            html.Div([
+                html.Div("MODEL LEADERBOARD BY REGIME", style={
+                    "fontFamily": "'Syne', sans-serif", "fontSize": "13px",
+                    "fontWeight": "800", "color": TEXT_HI,
+                    "letterSpacing": "3px", "marginBottom": "3px",
+                }),
+                html.Div("QLIKE  ·  lower is better  ·  updates with stock",
+                         style={"color": TEXT_MID, "fontSize": "12px",
+                                "letterSpacing": "0.5px"}),
+            ], style={"marginBottom": "14px"}),
+            html.Div(id="regime-leaderboard"),
+        ], glow=ACCENT),
 
     ], style={"padding": "14px 28px", "overflowY": "auto"}),
 ])
@@ -541,8 +547,11 @@ TAB_LEADERBOARD = html.Div([
             html.Div(id="lb-time-subtitle",
                      style={"color": TEXT_DIM, "fontSize": "10px",
                             "marginTop": "-8px", "marginBottom": "10px"}),
-            dcc.Graph(id="lb-time-chart", config={"displayModeBar": False},
-                      style={"height": "240px"}),
+            dcc.Loading(
+                dcc.Graph(id="lb-time-chart", config={"displayModeBar": False},
+                          style={"height": "240px"}),
+                type="circle", color=ACCENT,
+            ),
         ]),
 
     ], style={"padding": "14px 28px", "overflowY": "auto"}),
@@ -578,11 +587,11 @@ app.layout = html.Div([
 
     dcc.Tabs(
         id="main-tabs",
-        value="tab-monitor",
+        value="tab-buckets",
         children=[
-            dcc.Tab(label="◈  MONITOR",     value="tab-monitor",
-                    style=TAB_STYLE, selected_style=TAB_SELECTED),
             dcc.Tab(label="◎  RV BUCKETS",  value="tab-buckets",
+                    style=TAB_STYLE, selected_style=TAB_SELECTED),
+            dcc.Tab(label="◈  MONITOR",     value="tab-monitor",
                     style=TAB_STYLE, selected_style=TAB_SELECTED),
             dcc.Tab(label="◆  LEADERBOARD", value="tab-leaderboard",
                     style=TAB_STYLE, selected_style=TAB_SELECTED),
@@ -614,17 +623,10 @@ def render_tab(tab):
     return TAB_LEADERBOARD
 
 
-@callback(Output("tid-slider", "value"),
-          Input("tid-dd", "value"),
-          prevent_initial_call=True)
-def dd_to_slider(dd_val):
-    return dd_val if dd_val is not None else 0
-
-
 @callback(Output("tid-index", "data"),
-          Input("tid-slider", "value"))
-def slider_to_store(slider_val):
-    return slider_val if slider_val is not None else 0
+          Input("tid-dd", "value"))
+def dd_to_store(dd_val):
+    return dd_val if dd_val is not None else 0
 
 
 @callback(Output("snapshot-badge", "children"), Input("tid-index", "data"))
@@ -671,8 +673,8 @@ def update_summary(idx, model):
 
     def stat_card(lbl, val, unit="", color=TEXT_HI, accent=BORDER):
         return html.Div([
-            html.Div(lbl, style={"color": TEXT_DIM, "fontSize": "9px",
-                                 "letterSpacing": "1.5px", "marginBottom": "6px"}),
+            html.Div(lbl, style={"color": TEXT_DIM, "fontSize": "11px",
+                                 "letterSpacing": "0.8px", "marginBottom": "6px"}),
             html.Div([
                 html.Span(val, style={"color": color, "fontSize": "20px",
                                       "fontWeight": "600",
@@ -781,9 +783,9 @@ def update_risk_table(idx, model, watchlist):
     snap = snap.sort_values(["_wtch", "_pred"],
                             ascending=[False, False], na_position="last")
 
-    th   = {"color": TEXT_DIM, "fontSize": "9px", "letterSpacing": "1px",
+    th   = {"color": TEXT_DIM, "fontSize": "11px", "letterSpacing": "0.5px",
             "padding": "6px 10px", "borderBottom": f"1px solid {BORDER}",
-            "fontWeight": "400", "textAlign": "right"}
+            "fontWeight": "500", "textAlign": "right"}
     th_l = {**th, "textAlign": "left"}
 
     header = html.Thead(html.Tr([
@@ -829,7 +831,7 @@ def update_risk_table(idx, model, watchlist):
             html.Td(f"S{row['stock_id']:03d}",
                     style={**td_l, "color": TEXT_HI, "fontWeight": "500"}),
             html.Td(dbc.Badge(regime, color=REGIME_BADGE.get(regime, "secondary"),
-                              style={"fontSize": "9px"}), style=td_l),
+                              style={"fontSize": "11px"}), style=td_l),
             html.Td(pred_str, style={**td, "color": TEXT_HI}),
             html.Td(f"{row['actual_rv']:.5f}", style=td),
             html.Td(err_str, style={**td, "color": ec}),
@@ -888,7 +890,7 @@ def update_track_scatter(stock_id, model, compare_all):
                           style={"color": TEXT_HI if is_sel else TEXT_MID,
                                  "fontSize": "10px"}),
                 html.Span(f"(r={corr:.2f})",
-                          style={"color": TEXT_DIM, "fontSize": "9px"}),
+                          style={"color": TEXT_DIM, "fontSize": "11px"}),
             ], style={"marginBottom": "2px"}))
         stats = html.Div(stats_rows, style={"textAlign": "right"})
         fig.update_layout(legend=dict(orientation="h", y=-0.18, font=dict(size=9),
@@ -1012,14 +1014,27 @@ def export_csv(n_clicks, idx, model):
     return dcc.send_data_frame(out.to_csv, f"risk_table_{tid}_{model}.csv", index=False)
 
 
-@callback(Output("regime-leaderboard", "children"), Input("tid-index", "data"))
-def update_regime_leaderboard(idx):
-    tid  = TIME_IDS[idx]
-    snap = df[df["time_id"] == tid]
+@callback(Output("regime-leaderboard", "children"),
+          Input("bkt-stock-sel", "value"))
+def update_regime_leaderboard(stock_id):
+    # Stock selected → all snapshots for that stock, grouped by regime
+    # No stock      → aggregate over the full dataset
+    if stock_id is not None:
+        data = df[df["stock_id"] == stock_id]
+        context = f"Stock {stock_id:03d}  ·  all snapshots"
+    else:
+        data = df
+        context = "All stocks  ·  all snapshots"
 
-    th   = {"color": TEXT_DIM, "fontSize": "9px", "letterSpacing": "1px",
-            "padding": "6px 8px", "borderBottom": f"1px solid {BORDER}",
-            "fontWeight": "400", "textAlign": "center"}
+    context_div = html.Div(
+        f"Viewing: {context}",
+        style={"color": ACCENT, "fontSize": "11px", "letterSpacing": "0.5px",
+               "marginBottom": "12px", "fontWeight": "500"},
+    )
+
+    th   = {"color": TEXT_DIM, "fontSize": "11px", "letterSpacing": "0.5px",
+            "padding": "8px 10px", "borderBottom": f"1px solid {BORDER}",
+            "fontWeight": "500", "textAlign": "center"}
     th_l = {**th, "textAlign": "left"}
 
     header = html.Thead(html.Tr([
@@ -1031,7 +1046,7 @@ def update_regime_leaderboard(idx):
 
     rows = []
     for regime in ["calm", "normal", "elevated", "stressed"]:
-        rdf = snap[snap["regime"] == regime]
+        rdf = data[data["regime"] == regime]
         if len(rdf) == 0:
             continue
         scores = {m: qlike(rdf["actual_rv"], rdf[c])
@@ -1039,12 +1054,12 @@ def update_regime_leaderboard(idx):
         if not scores:
             continue
         best = min(scores, key=lambda k: scores[k] if not np.isnan(scores[k]) else np.inf)
-        td   = {"fontSize": "10px", "padding": "5px 8px",
+        td   = {"fontSize": "12px", "padding": "7px 10px",
                 "borderBottom": f"1px solid {BORDER}",
                 "fontFamily": "'JetBrains Mono', monospace", "textAlign": "center"}
         td_l = {**td, "textAlign": "left"}
         cells = [html.Td(dbc.Badge(regime, color=REGIME_BADGE.get(regime, "secondary"),
-                                   style={"fontSize": "9px"}), style=td_l)]
+                                   style={"fontSize": "11px"}), style=td_l)]
         for m in AVAILABLE_MODELS:
             s = scores.get(m)
             cells.append(html.Td(
@@ -1055,17 +1070,20 @@ def update_regime_leaderboard(idx):
             ))
         cells.append(html.Td(
             html.Span(best, style={"color": MODEL_COLORS.get(best, TEXT_HI),
-                                   "fontWeight": "600", "fontSize": "9px"}),
+                                   "fontWeight": "700", "fontSize": "11px"}),
             style=td,
         ))
         rows.append(html.Tr(cells))
 
     if not rows:
-        return html.Div("No data", style={"color": TEXT_DIM, "fontSize": "11px"})
-    return dbc.Table([header, html.Tbody(rows)], bordered=False, hover=True,
-                     responsive=True, size="sm",
-                     style={"backgroundColor": BG_CARD, "color": TEXT_MID,
-                            "marginBottom": "0", "fontSize": "10px"})
+        return [context_div,
+                html.Div("No data for this selection",
+                         style={"color": TEXT_MID, "fontSize": "12px"})]
+    table = dbc.Table([header, html.Tbody(rows)], bordered=False, hover=True,
+                      responsive=True, size="sm",
+                      style={"backgroundColor": BG_CARD, "color": TEXT_MID,
+                             "marginBottom": "0", "fontSize": "12px"})
+    return [context_div, table]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1287,9 +1305,6 @@ def metric_is_lower_better(metric):
     Output("lb-winner-banner", "children"),
     Output("lb-table", "children"),
     Output("lb-bar-chart", "figure"),
-    Output("lb-time-chart", "figure"),
-    Output("lb-time-title", "children"),
-    Output("lb-time-subtitle", "children"),
     Input("lb-regime-filter", "value"),
     Input("lb-metric", "value"),
     Input("lb-stock-filter", "value"),
@@ -1332,14 +1347,14 @@ def update_leaderboard_tab(regimes, metric, selected_stocks):
     # ── Winner banner ─────────────────────────────────────────────────────────
     banner = html.Div([
         html.Div([
-            html.Div("BEST MODEL", style={"color": TEXT_DIM, "fontSize": "9px",
-                                          "letterSpacing": "2px", "marginBottom": "6px"}),
+            html.Div("BEST MODEL", style={"color": TEXT_DIM, "fontSize": "11px",
+                                          "letterSpacing": "1px", "marginBottom": "6px"}),
             html.Div(best_model, style={
                 "color": best_color, "fontSize": "28px", "fontWeight": "800",
                 "fontFamily": "'Syne', sans-serif", "letterSpacing": "2px",
             }),
             html.Div(f"{best_score:.3f}{m_unit}  ·  {m_label}  ·  {stock_label}",
-                     style={"color": TEXT_DIM, "fontSize": "10px", "marginTop": "4px"}),
+                     style={"color": TEXT_MID, "fontSize": "12px", "marginTop": "4px"}),
         ], style={
             "backgroundColor": BG_CARD, "border": f"1px solid {best_color}33",
             "borderLeft": f"4px solid {best_color}",
@@ -1350,8 +1365,8 @@ def update_leaderboard_tab(regimes, metric, selected_stocks):
             html.Div([
                 html.Div([
                     html.Span("▮ ", style={"color": MODEL_COLORS.get(m, TEXT_MID),
-                                           "fontSize": "10px"}),
-                    html.Span(m, style={"color": TEXT_HI, "fontSize": "10px",
+                                           "fontSize": "12px"}),
+                    html.Span(m, style={"color": TEXT_HI, "fontSize": "12px",
                                         "fontWeight": "500"}),
                 ], style={"marginBottom": "2px"}),
                 html.Div(f"{s:.3f}{m_unit}" if not np.isnan(s) else "—",
@@ -1368,9 +1383,9 @@ def update_leaderboard_tab(regimes, metric, selected_stocks):
     ], style={"display": "flex", "gap": "14px", "alignItems": "stretch"})
 
     # ── Rankings table ────────────────────────────────────────────────────────
-    th   = {"color": TEXT_DIM, "fontSize": "9px", "letterSpacing": "1px",
+    th   = {"color": TEXT_DIM, "fontSize": "11px", "letterSpacing": "0.5px",
             "padding": "8px 12px", "borderBottom": f"1px solid {BORDER}",
-            "fontWeight": "400", "textAlign": "center"}
+            "fontWeight": "500", "textAlign": "center"}
     th_l = {**th, "textAlign": "left"}
 
     header = html.Thead(html.Tr([
@@ -1440,7 +1455,7 @@ def update_leaderboard_tab(regimes, metric, selected_stocks):
             row_cells.append(html.Td(f"{v:.2f}%" if v is not None and not np.isnan(v) else "—", style=td))
 
         rows.append(html.Tr(row_cells,
-                            style={"backgroundColor": best_color + "0d" if is_best
+                            style={"backgroundColor": ACCENT2 if is_best
                                    else "transparent"}))
 
     table = dbc.Table([header, html.Tbody(rows)], bordered=False, hover=True,
@@ -1468,26 +1483,88 @@ def update_leaderboard_tab(regimes, metric, selected_stocks):
         margin=dict(l=52, r=8, t=32, b=36),
     )
 
-    # ── Time chart: dynamic to metric, regime + stock filters ────────────────
-    def _corr_fn(t, p):
-        mask = p.notna() & t.notna()
-        return float(np.corrcoef(p[mask], t[mask])[0, 1]) if mask.sum() > 1 else np.nan
+    return banner, table, fig_bar
 
-    fn = {"qlike": qlike, "rmspe": rmspe, "bias": bias_pct,
-          "hit": hit_rate, "corr": _corr_fn}.get(metric, qlike)
+
+@callback(
+    Output("lb-time-chart", "figure"),
+    Output("lb-time-title", "children"),
+    Output("lb-time-subtitle", "children"),
+    Input("lb-regime-filter", "value"),
+    Input("lb-metric", "value"),
+    Input("lb-stock-filter", "value"),
+)
+def update_leaderboard_timechart(regimes, metric, selected_stocks):
+    METRIC_LABELS = {
+        "qlike": ("QLIKE",       "",  "lower is better"),
+        "rmspe": ("RMSPE",       "%", "lower is better"),
+        "bias":  ("Bias",        "%", "closer to 0 is better"),
+        "hit":   ("Hit Rate",    "%", "higher is better"),
+        "corr":  ("Correlation", "",  "higher is better"),
+    }
+    m_label, m_unit, m_note = METRIC_LABELS.get(metric, (metric, "", ""))
+
+    # Filter ONCE outside the model loop — no copy needed
+    ts_data = df
+    if regimes:
+        ts_data = ts_data[ts_data["regime"].isin(regimes)]
+    if selected_stocks:
+        ts_data = ts_data[ts_data["stock_id"].isin(selected_stocks)]
+
+    stock_label = ("All stocks" if not selected_stocks else
+                   f"S{selected_stocks[0]:03d}" if len(selected_stocks) == 1
+                   else f"{len(selected_stocks)} stocks selected")
+
+    # Determine best model for line emphasis (fast aggregate — no per-time_id needed)
+    scores = compute_scores(ts_data, metric)
+    lower_better = metric_is_lower_better(metric)
+    if scores:
+        best_model = (min if lower_better else max)(
+            scores,
+            key=lambda k: scores[k] if not np.isnan(scores[k])
+            else (np.inf if lower_better else -np.inf),
+        )
+    else:
+        best_model = None
 
     fig_time = go.Figure()
     for m, c in AVAILABLE_MODELS.items():
         if c not in df.columns:
             continue
-        ts_data = df.copy()
-        if regimes:
-            ts_data = ts_data[ts_data["regime"].isin(regimes)]
-        if selected_stocks:
-            ts_data = ts_data[ts_data["stock_id"].isin(selected_stocks)]
-        ts_scores = (ts_data.groupby("time_id")
-                     .apply(lambda g, _c=c, _fn=fn: _fn(g["actual_rv"], g[_c]))
-                     .reset_index(name="score"))
+
+        d = ts_data[["time_id", "actual_rv", c]].dropna(subset=["actual_rv", c])
+        if d.empty:
+            continue
+
+        # Vectorized per-time_id computation — replaces slow groupby.apply for
+        # qlike / rmspe / bias (most-used metrics).  hit / corr fall back to apply.
+        if metric == "qlike":
+            t = d["actual_rv"].clip(lower=EPS)
+            h = d[c].clip(lower=EPS)
+            d = d.assign(_s=t / h - np.log(t / h) - 1)
+            ts_scores = d.groupby("time_id")["_s"].mean().reset_index(name="score")
+        elif metric == "rmspe":
+            t = d["actual_rv"].clip(lower=EPS)
+            h = d[c].clip(lower=EPS)
+            d = d.assign(_s=((h - t) / t) ** 2)
+            raw = d.groupby("time_id")["_s"].mean()
+            ts_scores = (np.sqrt(raw) * 100).reset_index(name="score")
+        elif metric == "bias":
+            t = d["actual_rv"].clip(lower=EPS)
+            h = d[c].clip(lower=EPS)
+            d = d.assign(_s=(h - t) / t)
+            ts_scores = (d.groupby("time_id")["_s"].mean() * 100).reset_index(name="score")
+        elif metric == "corr":
+            ts_scores = (ts_data[["time_id", "actual_rv", c]]
+                         .dropna(subset=["actual_rv", c])
+                         .groupby("time_id")
+                         .apply(lambda g: g[c].corr(g["actual_rv"]))
+                         .reset_index(name="score"))
+        else:  # hit rate — requires consecutive differences, keep apply
+            ts_scores = (ts_data.groupby("time_id")
+                         .apply(lambda g, _c=c: hit_rate(g["actual_rv"], g[_c]))
+                         .reset_index(name="score"))
+
         mc = MODEL_COLORS.get(m, TEXT_MID)
         fig_time.add_trace(go.Scatter(
             x=ts_scores["time_id"], y=ts_scores["score"],
@@ -1497,6 +1574,7 @@ def update_leaderboard_tab(regimes, metric, selected_stocks):
             name=m,
             hovertemplate=f"<b>{m}</b><br>Snapshot: %{{x}}<br>{m_label}: %{{y:.4f}}<extra></extra>",
         ))
+
     fig_time.update_layout(
         template=PLOT_TMPL,
         title=dict(text=f"{m_label} over snapshots · {stock_label}",
@@ -1507,10 +1585,11 @@ def update_leaderboard_tab(regimes, metric, selected_stocks):
         margin=dict(l=52, r=8, t=32, b=56),
     )
 
-    time_title    = f"{m_label} over Snapshots"
-    time_subtitle = f"how each model performed across time · {m_note} · {stock_label}"
-
-    return banner, table, fig_bar, fig_time, time_title, time_subtitle
+    return (
+        fig_time,
+        f"{m_label} over Snapshots",
+        f"how each model performed across time · {m_note} · {stock_label}",
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════

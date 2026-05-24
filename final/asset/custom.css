@@ -3,15 +3,23 @@
 body {
     background-color: #070b11 !important;
     font-family: 'JetBrains Mono', monospace;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
 }
 
-/* Snapshot slider */
-.snapshot-slider .rc-slider-rail       { background-color: #1a2540; }
-.snapshot-slider .rc-slider-track      { background-color: #5b8dee; }
-.snapshot-slider .rc-slider-handle     { border-color: #5b8dee; background: #5b8dee; }
-.snapshot-slider .rc-slider-handle:hover { border-color: #93b4f7; }
+/* Sharpen tiny uppercase labels (letterSpacing at sub-11px causes blur) */
+.dash-label, .form-check-label {
+    -webkit-font-smoothing: antialiased;
+}
 
-/* Snapshot dropdown */
+/* Minimum readable size for all text inside cards */
+.dash-graph, .dash-table {
+    font-size: 11px;
+}
+
+/* ── Snapshot dropdown ───────────────────────────────────────────────────── */
+/* react-select v1/v2 class names (older Dash) */
 .snapshot-dd .Select-control,
 .snapshot-dd .Select-menu-outer        { background-color: #0d1420 !important; border-color: #1a2540 !important; }
 .snapshot-dd .Select-value-label       { color: #e2e8f0 !important; }
@@ -19,23 +27,23 @@ body {
 .snapshot-dd .Select-option:hover      { background-color: #111c30; }
 .snapshot-dd .VirtualizedSelectOption  { background-color: #0d1420; }
 
-/* Model radio */
+/* ── Model radio ─────────────────────────────────────────────────────────── */
 .model-radio .form-check-label         { color: #94a3b8; font-size: 12px; }
 .model-radio .form-check-input:checked { background-color: #5b8dee; border-color: #5b8dee; }
 
-/* Table hover rows */
+/* ── Table hover rows ────────────────────────────────────────────────────── */
 tbody tr:hover td { background-color: #111c30 !important; }
 
-/* Scrollbar */
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar                    { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track              { background: #070b11; }
 ::-webkit-scrollbar-thumb              { background: #1a2540; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover        { background: #2d3f60; }
 
-/* Plotly toolbar */
+/* ── Plotly toolbar ──────────────────────────────────────────────────────── */
 .modebar { display: none !important; }
 
-/* Dash dropdown dark overrides */
+/* ── dcc.Dropdown dark theme — react-select v1/v2 class names ────────────── */
 .Select-control                        { background-color: #0d1420 !important; border: 1px solid #1a2540 !important; }
 .Select-menu-outer                     { background-color: #0d1420 !important; border: 1px solid #1a2540 !important; }
 .Select-value-label                    { color: #e2e8f0 !important; }
@@ -43,3 +51,25 @@ tbody tr:hover td { background-color: #111c30 !important; }
 .VirtualizedSelectOption               { background-color: #0d1420 !important; color: #94a3b8 !important; }
 .VirtualizedSelectOption:hover         { background-color: #111c30 !important; }
 .VirtualizedSelectFocusedOption        { background-color: #111c30 !important; }
+.Select-arrow                          { border-top-color: #64748b !important; }
+.Select-input > input                  { color: #e2e8f0 !important; }
+.Select.is-open > .Select-control      { background-color: #0d1420 !important; }
+
+/* ── dcc.Dropdown dark theme — modern Dash / react-select v5 class names ─── */
+.dash-dropdown                         { background-color: #0d1420 !important; }
+.dash-dropdown .Select__control        { background-color: #0d1420 !important; border: 1px solid #1a2540 !important; color: #e2e8f0 !important; }
+.dash-dropdown .Select__control:hover  { border-color: #2a3a5c !important; }
+.dash-dropdown .Select__menu           { background-color: #0d1420 !important; border: 1px solid #1a2540 !important; }
+.dash-dropdown .Select__option         { background-color: #0d1420 !important; color: #94a3b8 !important; }
+.dash-dropdown .Select__option--is-focused   { background-color: #111c30 !important; }
+.dash-dropdown .Select__option--is-selected  { background-color: #182035 !important; color: #e2e8f0 !important; }
+.dash-dropdown .Select__single-value   { color: #e2e8f0 !important; }
+.dash-dropdown .Select__placeholder    { color: #64748b !important; }
+.dash-dropdown .Select__input-container { color: #e2e8f0 !important; }
+.dash-dropdown .Select__indicator-separator { background-color: #1a2540 !important; }
+.dash-dropdown .Select__dropdown-indicator  { color: #64748b !important; }
+.dash-dropdown .Select__dropdown-indicator:hover { color: #94a3b8 !important; }
+.dash-dropdown .Select__multi-value    { background-color: #182035 !important; }
+.dash-dropdown .Select__multi-value__label   { color: #e2e8f0 !important; }
+.dash-dropdown .Select__multi-value__remove  { color: #64748b !important; }
+.dash-dropdown .Select__multi-value__remove:hover { background-color: #ef4444 !important; color: #fff !important; }
