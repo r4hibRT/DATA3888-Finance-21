@@ -188,6 +188,7 @@ app = Dash(
     suppress_callback_exceptions=True,
 )
 app.title = "Vol Regime Monitor"
+server = app.server  # expose Flask server for Gunicorn
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Shared Controls
@@ -1601,4 +1602,4 @@ if __name__ == "__main__":
     print(f"Models: {list(AVAILABLE_MODELS.keys())}")
     print(f"RV Buckets: {RV_BUCKET_COLS}")
     print("Starting → http://127.0.0.1:8050")
-    app.run(debug=True, port=8050)
+    app.run(debug=False, port=8050)
