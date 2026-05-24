@@ -1,0 +1,45 @@
+/* assets/custom.css — Volatility Regime Monitor */
+
+body {
+    background-color: #070b11 !important;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* Snapshot slider */
+.snapshot-slider .rc-slider-rail       { background-color: #1a2540; }
+.snapshot-slider .rc-slider-track      { background-color: #5b8dee; }
+.snapshot-slider .rc-slider-handle     { border-color: #5b8dee; background: #5b8dee; }
+.snapshot-slider .rc-slider-handle:hover { border-color: #93b4f7; }
+
+/* Snapshot dropdown */
+.snapshot-dd .Select-control,
+.snapshot-dd .Select-menu-outer        { background-color: #0d1420 !important; border-color: #1a2540 !important; }
+.snapshot-dd .Select-value-label       { color: #e2e8f0 !important; }
+.snapshot-dd .Select-option            { background-color: #0d1420; color: #94a3b8; }
+.snapshot-dd .Select-option:hover      { background-color: #111c30; }
+.snapshot-dd .VirtualizedSelectOption  { background-color: #0d1420; }
+
+/* Model radio */
+.model-radio .form-check-label         { color: #94a3b8; font-size: 12px; }
+.model-radio .form-check-input:checked { background-color: #5b8dee; border-color: #5b8dee; }
+
+/* Table hover rows */
+tbody tr:hover td { background-color: #111c30 !important; }
+
+/* Scrollbar */
+::-webkit-scrollbar                    { width: 6px; height: 6px; }
+::-webkit-scrollbar-track              { background: #070b11; }
+::-webkit-scrollbar-thumb              { background: #1a2540; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover        { background: #2d3f60; }
+
+/* Plotly toolbar */
+.modebar { display: none !important; }
+
+/* Dash dropdown dark overrides */
+.Select-control                        { background-color: #0d1420 !important; border: 1px solid #1a2540 !important; }
+.Select-menu-outer                     { background-color: #0d1420 !important; border: 1px solid #1a2540 !important; }
+.Select-value-label                    { color: #e2e8f0 !important; }
+.Select-placeholder                    { color: #64748b !important; }
+.VirtualizedSelectOption               { background-color: #0d1420 !important; color: #94a3b8 !important; }
+.VirtualizedSelectOption:hover         { background-color: #111c30 !important; }
+.VirtualizedSelectFocusedOption        { background-color: #111c30 !important; }
