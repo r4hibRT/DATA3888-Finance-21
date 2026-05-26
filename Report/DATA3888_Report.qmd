@@ -1,0 +1,45 @@
+---
+title: "DATA3888 Group Report"
+author:
+        - name: "Finance Group 21"
+          affiliation: "The University of Sydney"
+
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+format:
+  html:
+    code-tools: true
+    code-fold: true
+    fig_caption: yes
+    number_sections: yes
+    embed-resources: true
+    theme: 
+      light: lux
+      dark: darkly
+    css:
+      - https://use.fontawesome.com/releases/v5.0.6/css/all.css
+    toc: true
+    toc_depth: 4
+    toc_float: true
+execute:
+  echo: true
+  tidy: true
+---
+
+## Executive Summary
+
+## Background
+
+## Methodology
+
+## Results
+
+## Discussion and Conclusion
+
+## Student Contributions
+
+## References
+
+## Appendix {.appendix}
+
+
+
