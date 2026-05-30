@@ -73,7 +73,7 @@ $$
 \text{RV} = \sqrt{\sum r_t^2}
 $$
 
-over seconds 480–599, with the model trained to predict $$\log(\text{RV})$$, floored at $$10^{-4}$$.
+over seconds 480–599, with the model trained to predict $\log(RV)$, floored at $10^{-4}$.
 
 Five-fold cross-validation is constructed using GroupShuffleSplit on `time_id` (80/20 split), ensuring no trading window appears in both train and test sets.
 
@@ -87,15 +87,9 @@ The GARCH model used in this study is a GARCH(1,1) specification, fitted indepen
 
 $$\sigma_t^2 = \omega + \alpha \sigma_{t-1}^2 + \beta \sigma_{t-1}^2 $$
 
-where
+where $\varepsilon_t = \sigma_t z_t$ and $z_t$ is a standard noise process. [@vlab_garch]
 
-$$
-\varepsilon_t = \sigma_t z_t
-$$
-
-and $$ z_t $$ is a standard noise process. [@vlab_garch]
-
-Once fitted, the model produces a multi-step forecast over the next 120 seconds by projecting the conditional variance forward recursively. These stepwise forecasts are then aggregated to produce a single realised-volatility estimate. The resulting forecasts are evaluated using five-fold cross-validation, consistent with the evaluation framework used for the other models in this study.
+Once fitted, the model produces a multi-step forecast over the next 120 seconds by projecting the conditional variance forward recursively, which is then aggregated to produce a single realised-volatility estimate. The resulting forecasts are evaluated using five-fold cross-validation, consistent with the evaluation framework used for the other models in this study.
 
 #### HAR
 
@@ -135,7 +129,7 @@ The innovation is extending a conventional HAR-RV model into a stock-level HAR-X
 
 #### Residual Stacker with QLike-optimised correction
 
-The Residual Stacker is a two stage ensemble that augments the HAR-RV baseline with a LightGBM residual correction layer [@ai2024lightgbm]. In the first stage, per-stock HAR predictions are generated via nested 5-fold cross validation to produce out-of-fold residuals on a training set, a stacking design that prevents data leakage in the correction stage. In the second stage, LightGBM is trained to predict these residuals using 42 engineered features derived from the order book, selected via a three-stage pipeline of mutual information filtering, SHAP-based importance ranking, and permutation importance[ ](https://link.springer.com/article/10.1186/s40537-024-00905-w],)[@wang2024shap], spanning realised volatility lags, bid-ask spread dynamics, return distribution moments, and cross-stock z-scores. The final prediction combines both stages:
+The Residual Stacker is a two stage ensemble that augments the HAR-RV baseline with a LightGBM residual correction layer [@ai2024lightgbm]. In the first stage, per-stock HAR predictions are generated via nested 5-fold cross validation to produce out-of-fold residuals on a training set, a stacking design that prevents data leakage in the correction stage. In the second stage, LightGBM is trained to predict these residuals using 42 engineered features derived from the order book, selected via a three-stage pipeline of mutual information filtering, SHAP-based importance ranking, and permutation importance[ ](https://link.springer.com/article/10.1186/s40537-024-00905-w%5D,)[@wang2024shap], spanning realised volatility lags, bid-ask spread dynamics, return distribution moments, and cross-stock z-scores. The final prediction combines both stages:
 
 $$
 \hat{y} = \exp(\log \sigma_{\text{HAR}} + f_{\text{LGB}}(x))
@@ -168,7 +162,7 @@ with the spread penalty updated adaptively per stock each epoch to discourage ov
 Two metrics are used. RMSPE measures proportional prediction error symmetrically. QLike, defined as
 
 $$
-\frac{\sigma^2}{\hat{\sigma}^2} - \log\left(\frac{\sigma^2}{\hat{\sigma}^2}\right) - 1
+\frac{\sigma}{\hat{\sigma}} - \log\left(\frac{\sigma}{\hat{\sigma}}\right) - 1
 $$
 
 penalises under-prediction more heavily, reflecting the asymmetric cost of underestimating risk in options pricing.
@@ -205,7 +199,7 @@ The Monitor tab takes a portfolio-wide view, presenting a heatmap of all 112 sto
 
 The Leaderboard tab benchmarks models globally across five metrics, with filtering by regime, stock, and time. Together, the dashboard lets practitioners quickly identify which model holds up best for a given instrument and market condition.
 
-## Discussion 
+## Discussion
 
 Several limitations are worth noting. The results are numerical rankings without formal significance testing, so small gaps between models should be read carefully. GARCH was also fitted on only 480 seconds of returns per window, which likely put it at a disadvantage and may partly explain its weaker performance. The dataset also contains gaps and missing time IDs, meaning some trading windows are absent entirely. This breaks any assumption of continuity and could affect models that implicitly rely on consecutive observations, particularly the GNN which aggregates information across stocks. Relatedly, the time IDs themselves are non-sequential, so the ordering of windows cannot be treated as a clean time series. This limits the ability to model genuine intraday trends or carry information across windows in a principled way. Beyond that, the analysis covers a single dataset of 112 stocks at one forecast horizon, so it is unclear how well the findings carry over to other instruments, market conditions, or longer horizons. The GNN Hybrid also requires significant computation and is harder to interpret, which is a practical concern in fast-moving trading environments.
 
