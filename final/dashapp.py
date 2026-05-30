@@ -33,8 +33,7 @@ TIME_IDS = sorted(df["time_id"].unique())
 EPS      = 1e-8
 
 MODEL_COLS = {
-    "HAR-RV":   "pred_har_base",   # baseline HAR (Fold 0)
-    "HAR-X":    "pred_har",        # extended HAR variant
+    "HAR-X":    "pred_har",
     "LightGBM": "pred_lgbm",
     "GARCH":    "pred_garch",
     "GNN":      "pred_gnn",
@@ -45,8 +44,7 @@ AVAILABLE_MODELS = {k: v for k, v in MODEL_COLS.items()
 RV_BUCKET_COLS = [c for c in ["rv_b0", "rv_b1", "rv_b2", "rv_b3"] if c in df.columns]
 
 MODEL_COLORS = {
-    "HAR-RV":   "#f97316",   # orange — baseline HAR
-    "HAR-X":    "#5b8dee",   # blue   — extended HAR
+    "HAR-X":    "#5b8dee",
     "LightGBM": "#3ecf8e",
     "GARCH":    "#ff6b6b",
     "GNN":      "#c084fc",
