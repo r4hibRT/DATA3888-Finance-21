@@ -1,25 +1,4 @@
-"""
-gnn_rv.py
-=========
-Spatio-Temporal GNN for realized volatility forecasting.
 
-Merged version:
-  - HAR branch with learned blend weight (from better-performing version)
-  - Deviation-from-mean global context (fixes mean collapse)
-  - Per-epoch RMSPE/QLIKE printing
-  - Combined RMSPE + QLIKE loss
-  - Stratified sampling (oversamples low-RV time_ids)
-  - Reads preprocessed .npz from preprocess_gnn.py
-  - Per-tid spread penalty  →  now per-STOCK adaptive spread penalty
-  - 8 buckets of 60s (finer temporal resolution)
-  - Learnable per-stock bias scalar (stock fixed effect)
-  - Adaptive per-stock spread weight (updated each epoch from spread ratio)
-
-Pipeline:
-  eda.ipynb -> processed/fold_{0..4}/{train,test}.parquet
-  preprocess_gnn.py -> processed/fold_{0..4}/{train,test}_gnn.npz
-  -> this script -> processed/fold_{0..4}/gnn_* outputs
-"""
 
 from __future__ import annotations
 
@@ -63,7 +42,7 @@ EPS             = 1e-8
 INPUT_END      = 480
 TARGET_START   = 480
 TOTAL_SECONDS  = 600
-BUCKET_SIZE    = 60      # 8 buckets of 60s — finer temporal resolution
+BUCKET_SIZE    = 60      
 BUCKET_COUNT   = INPUT_END // BUCKET_SIZE   # 8
 INPUT_DIM      = 7
 
@@ -417,13 +396,6 @@ class SpatioTemporalGNN(nn.Module):
         # HAR branch: learned blend with GNN
         self.har_branch = nn.Linear(BUCKET_COUNT, 1, bias=True)
         self.har_weight = nn.Parameter(torch.tensor(0.5))
-
-        # ── Per-stock bias (stock fixed effect) ───────────────────────
-        # One learnable scalar per stock. Absorbs systematic level error
-        # (e.g. stocks that are persistently over/under-predicted).
-        # Included in Adam's weight_decay so it is L2-regularised.
-        # Initialised to zero so it starts neutral and learns only what
-        # the GNN cannot explain.
         self.stock_bias = nn.Parameter(torch.zeros(num_stocks))
 
     def forward(self, X, stock_ids):
@@ -519,11 +491,6 @@ class CombinedLoss(nn.Module):
         self.eps        = eps
         self.num_stocks = num_stocks
 
-        # Per-stock adaptive spread weights.
-        # Initialised to 1.0 (uniform). Updated after every training epoch
-        # via update_spread_weights(). Stocks that are underdispersed
-        # (pred_std < true_std) receive a larger penalty weight next epoch.
-        # Registered as a buffer so it moves with .to(device) automatically.
         self.register_buffer("per_stock_spread_w", torch.ones(num_stocks))
 
     # ------------------------------------------------------------------
@@ -577,9 +544,6 @@ class CombinedLoss(nn.Module):
         ratio = true_rv / pred_rv
         qlike = torch.mean(ratio - torch.log(ratio) - 1)
 
-        # Per-stock adaptive spread penalty.
-        # Loops over the stock dimension (N columns) so each stock's
-        # underdispersion is weighted by its historical spread ratio.
         spread_penalties = []
         for s in range(N):
             live_s = live[:, s]
@@ -600,14 +564,6 @@ class CombinedLoss(nn.Module):
 
 def run_epoch(model, loader, loss_fn, device, optimizer=None,
               collect_per_stock=False):
-    """
-    Run one full pass over the data.
-
-    When collect_per_stock=True (training epochs only) the function also
-    accumulates per-stock predicted / true log-RV arrays and returns them
-    as extra dict outputs so train_model can call
-    loss_fn.update_spread_weights() before the next epoch.
-    """
     is_train = optimizer is not None
     model.train() if is_train else model.eval()
     total_loss, total_n = 0.0, 0
@@ -678,8 +634,6 @@ def train_model(num_stocks, train_ds, val_ds, hparams, device,
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-6)
 
-    # CombinedLoss now takes num_stocks so it can allocate per-stock buffers.
-    # Move to device so the per_stock_spread_w buffer lands on GPU if available.
     loss_fn = CombinedLoss(num_stocks).to(device)
 
     sampling_weights = train_ds.get_sampling_weights()
@@ -701,15 +655,11 @@ def train_model(num_stocks, train_ds, val_ds, hparams, device,
     for epoch in range(1, EPOCHS + 1):
         t0 = _time.time()
 
-        # ── Training pass ────────────────────────────────────────────
-        # collect_per_stock=True gathers per-stock log-RV arrays so we
-        # can update the adaptive spread weights before the next epoch.
         tr_loss, tr_rmspe, tr_qlike, ps_pred, ps_true = run_epoch(
             model, train_loader, loss_fn, device, optimizer,
             collect_per_stock=True)
 
-        # Update per-stock spread weights for the next epoch.
-        # Epoch 1 always runs at uniform weights; epoch 2+ are adaptive.
+
         loss_fn.update_spread_weights(ps_pred, ps_true)
 
         # ── Validation pass ──────────────────────────────────────────
@@ -799,7 +749,6 @@ def run_outer_fold(fold, fold_dir):
         + ", ".join(f"stock {s} ({bias_vals[s]:+.3f})" for s in top_neg))
 
     # ── Adaptive spread-weight diagnostics ───────────────────────────
-    # Re-create loss_fn to read final spread weights (model_path already saved)
     loss_fn_diag = CombinedLoss(num_stocks).to(device)
     # Run one training pass to populate weights (reuse tr_ds)
     tr_loader_diag = DataLoader(tr_ds, batch_size=BATCH_SIZE, shuffle=False,

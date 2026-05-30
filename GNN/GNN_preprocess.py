@@ -1,21 +1,4 @@
-"""
-preprocess_gnn.py
-=================
-Preprocesses raw per-second parquet files into bucketed tensors
-for the Spatio-Temporal GNN.
 
-Reads:  processed/fold_{0..4}/{train,test}.parquet
-Writes: processed/fold_{0..4}/{train,test}_gnn.npz
-        Each .npz contains:
-          X         : (n_time_ids, num_stocks, BUCKET_COUNT, INPUT_DIM) float32
-          y         : (n_time_ids, num_stocks) float32  — log(RV) target
-          time_ids  : (n_time_ids,) int32
-          num_stocks: scalar
-
-Run after:  eda.ipynb (which creates the fold parquets)
-Run before: gnn_rv.py
-Usage:      python preprocess_gnn.py
-"""
 
 import gc
 import time as _time
