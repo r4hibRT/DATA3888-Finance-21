@@ -33,7 +33,8 @@ TIME_IDS = sorted(df["time_id"].unique())
 EPS      = 1e-8
 
 MODEL_COLS = {
-    "HAR-RV":   "pred_har",
+    "HAR-RV":   "pred_har_base",   # baseline HAR (Fold 0)
+    "HAR-X":    "pred_har",        # extended HAR variant
     "LightGBM": "pred_lgbm",
     "GARCH":    "pred_garch",
     "GNN":      "pred_gnn",
@@ -44,7 +45,8 @@ AVAILABLE_MODELS = {k: v for k, v in MODEL_COLS.items()
 RV_BUCKET_COLS = [c for c in ["rv_b0", "rv_b1", "rv_b2", "rv_b3"] if c in df.columns]
 
 MODEL_COLORS = {
-    "HAR-RV":   "#5b8dee",
+    "HAR-RV":   "#f97316",   # orange — baseline HAR
+    "HAR-X":    "#5b8dee",   # blue   — extended HAR
     "LightGBM": "#3ecf8e",
     "GARCH":    "#ff6b6b",
     "GNN":      "#c084fc",
@@ -1301,6 +1303,10 @@ def compute_scores(subset, metric):
 def metric_is_lower_better(metric):
     return metric in ("qlike", "rmspe")
 
+def metric_is_abs_better(metric):
+    """True when the best score is the one closest to zero (e.g. bias)."""
+    return metric == "bias"
+
 
 @callback(
     Output("lb-winner-banner", "children"),
@@ -1336,7 +1342,10 @@ def update_leaderboard_tab(regimes, metric, selected_stocks):
         return empty, empty, go.Figure(), go.Figure()
 
     lower_better = metric_is_lower_better(metric)
-    if lower_better:
+    abs_better   = metric_is_abs_better(metric)
+    if abs_better:
+        ranked = sorted(scores.items(), key=lambda x: abs(x[1]) if not np.isnan(x[1]) else np.inf)
+    elif lower_better:
         ranked = sorted(scores.items(), key=lambda x: x[1] if not np.isnan(x[1]) else np.inf)
     else:
         ranked = sorted(scores.items(), key=lambda x: -x[1] if not np.isnan(x[1]) else -np.inf)
@@ -1417,7 +1426,13 @@ def update_leaderboard_tab(regimes, metric, selected_stocks):
     for rank, (m, s) in enumerate(ranked, start=1):
         mc      = MODEL_COLORS.get(m, TEXT_MID)
         is_best = rank == 1
-        vs_best = s - best_score if lower_better else best_score - s
+        if abs_better:
+            # distance from zero — positive means further away (worse)
+            vs_best = abs(s) - abs(best_score)
+        elif lower_better:
+            vs_best = s - best_score
+        else:
+            vs_best = best_score - s
         vs_str  = (f"{'+' if vs_best >= 0 else ''}{vs_best:.4f}{m_unit}"
                    if vs_best != 0 else "—")
         vs_col  = TEXT_DIM if vs_best == 0 else "#ef4444" if vs_best > 0 else "#3ecf8e"
@@ -1519,12 +1534,17 @@ def update_leaderboard_timechart(regimes, metric, selected_stocks):
     # Determine best model for line emphasis (fast aggregate — no per-time_id needed)
     scores = compute_scores(ts_data, metric)
     lower_better = metric_is_lower_better(metric)
+    abs_better   = metric_is_abs_better(metric)
     if scores:
-        best_model = (min if lower_better else max)(
-            scores,
-            key=lambda k: scores[k] if not np.isnan(scores[k])
-            else (np.inf if lower_better else -np.inf),
-        )
+        if abs_better:
+            best_model = min(scores,
+                             key=lambda k: abs(scores[k]) if not np.isnan(scores[k]) else np.inf)
+        else:
+            best_model = (min if lower_better else max)(
+                scores,
+                key=lambda k: scores[k] if not np.isnan(scores[k])
+                else (np.inf if lower_better else -np.inf),
+            )
     else:
         best_model = None
 
