@@ -332,96 +332,156 @@ plt.show()
 The results, as seen above in @fig-model-comparison show that model performance is not uniformly improved by greater complexity. HAR-X remains an interpretable and balanced reference point with the addition of exogenous liquidity and order-book variables, achieving an RMSPE of 0.5416 and QLike of 0.0511. This suggests that short-horizon volatility is shaped not only by volatility persistence, but also by immediate trading frictions such as spread, volume, and order imbalance.
 
 ```{python}
-#| label: fig-forecast-stability
-#| fig-cap: "5-fold forecast stability. Points show fold-level estimates, filled circles show the mean, and horizontal bars span the 95% t-interval. Dashed line marks the HAR-X mean for reference."
+#| label: fig-dm-table
+#| fig-cap: "Diebold-Mariano pairwise tests with Benjamini-Hochberg FDR correction. Positive DM stat indicates Model 2 is better; significance stars reflect BH-corrected p-values."
 #| echo: false
-import numpy as np
+
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.lines as mlines
-from scipy import stats
+import matplotlib.patches as mpatches
+from matplotlib.lines import Line2D
 from pathlib import Path
-import json
+from statsmodels.stats.multitest import multipletests
 
 BASE_DIR = Path.cwd().parent
 EVAL_DIR = BASE_DIR / "outputs" / "evaluation"
 
-with open(EVAL_DIR / "fold_metrics.json") as f:
-    fold_metrics = json.load(f)
-fold_qlike_metrics = fold_metrics["qlike"]
-fold_rmspe_metrics = fold_metrics["rmspe"]
+# Load raw DM results and apply BH correction inline
+dm_df = pd.read_csv(EVAL_DIR / "dm_tests_all_models.csv")
 
-model_names = ["HAR-X", "QLIKE-LGB", "GNN", "GARCH"]
-colors      = ["steelblue", "seagreen", "tomato", "sienna"]
+for metric in ["RMSPE", "QLIKE"]:
+    mask = dm_df["metric"] == metric
+    _, pvals_corrected, _, _ = multipletests(
+        dm_df.loc[mask, "p_value"].values, method="fdr_bh"
+    )
+    dm_df.loc[mask, "p_value_corrected"] = pvals_corrected
 
-def compute_ci(fold_values, confidence=0.95):
-    arr  = np.array(fold_values)
-    mean = arr.mean()
-    se   = stats.sem(arr)
-    ci   = stats.t.interval(confidence, df=len(arr) - 1, loc=mean, scale=se)
-    return mean, ci[0], ci[1]
+def sig_stars(p):
+    if p < 0.001: return "***"
+    if p < 0.01:  return "**"
+    if p < 0.05:  return "*"
+    return ""
 
-fig, axes = plt.subplots(1, 2, figsize=(8, 5))
+# ── Build display dataframe ───────────────────────────────────────────────────
+rows = []
+for _, row in dm_df.iterrows():
+    rows.append({
+        "Metric":       row["metric"],
+        "Model 1":      row["model_1"],
+        "Model 2":      row["model_2"],
+        "DM Stat":      f"{row['dm_stat']:+.4f}",
+        "p-value":      f"{row['p_value']:.4f}",
+        "p-corrected":  f"{row['p_value_corrected']:.4f}",
+        "Sig":          sig_stars(row["p_value_corrected"]),
+        "Better Model": row["model_2"] if row["dm_stat"] > 0 else row["model_1"],
+    })
+display_df = pd.DataFrame(rows)
 
-for ax, (metric_name, fold_data) in zip(axes, [
-    ("QLIKE", fold_qlike_metrics),
-    ("RMSPE", fold_rmspe_metrics),
-]):
-    y_pos = np.arange(len(model_names))
+# ── Colour mapping ────────────────────────────────────────────────────────────
+model_colors = {
+    "HAR-X":     "steelblue",
+    "QLIKE-LGB": "seagreen",
+    "GNN":       "tomato",
+    "GARCH":     "sienna",
+}
+sig_colors = {
+    "***": "#2ecc71",
+    "**":  "#f39c12",
+    "*":   "#e67e22",
+    "":    "#aaaaaa",
+}
 
-    for i, (name, color) in enumerate(zip(model_names, colors)):
-        mean, lo, hi = compute_ci(fold_data[name])
-        fold_vals    = fold_data[name]
-        ax.plot([lo, hi], [i, i], color=color,
-                linewidth=3, alpha=0.8, solid_capstyle="round", zorder=2)
-        ax.scatter(mean, i, color=color, s=120,
-                   zorder=4, edgecolors="white", linewidth=1.5)
-        ax.scatter(fold_vals, [i] * 5, color=color,
-                   s=30, alpha=0.5, zorder=3, marker="|")
+# ── Layout ────────────────────────────────────────────────────────────────────
+col_labels = ["Metric", "Model 1", "Model 2", "DM Stat",
+              "p-value", "p-corrected", "Sig", "Better Model"]
+col_widths = [0.08, 0.11, 0.11, 0.10, 0.10, 0.13, 0.06, 0.13]
+n_rows     = len(display_df)
 
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(model_names, fontsize=10)
-    ax.set_xlabel(metric_name, fontsize=11)
-    ax.set_title(metric_name, fontsize=11, fontweight="bold")
-    ax.grid(axis="x", alpha=0.3, zorder=1)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.invert_yaxis()
+fig_height = 0.42 * (n_rows + 1.5)
+fig, ax    = plt.subplots(figsize=(13, fig_height))
+ax.axis("off")
 
-    harx_mean, _, _ = compute_ci(fold_data["HAR-X"])
-    ax.axvline(harx_mean, color="steelblue", linewidth=1,
-               linestyle="--", alpha=0.5, label=f"HAR-X mean ({harx_mean:.4f})")
-    ax.legend(fontsize=8, framealpha=0.6)
+fig.patch.set_facecolor("white")
+ax.set_facecolor("white")
 
-    ax.figure.canvas.draw()
-    x_range = ax.get_xlim()[1] - ax.get_xlim()[0]
-    for i, (name, color) in enumerate(zip(model_names, colors)):
-        mean, lo, hi = compute_ci(fold_data[name])
-        ax.text(hi + x_range * 0.02, i, f"{mean:.4f}",
-                va="center", ha="left", fontsize=8.5,
-                color=color, fontweight="bold")
-    ax.set_xlim(right=ax.get_xlim()[1] + x_range * 0.12)
+# ── Header ────────────────────────────────────────────────────────────────────
+x_cursor = 0.0
+for label, w in zip(col_labels, col_widths):
+    ax.text(x_cursor + w / 2, 1.0, label,
+            ha="center", va="center", fontsize=9,
+            fontweight="bold", color="white",
+            transform=ax.transAxes,
+            bbox=dict(boxstyle="round,pad=0.3",
+                      facecolor="#2c3e50", edgecolor="none"))
+    x_cursor += w
 
-handles = [
-    mlines.Line2D([0], [0], color=c, linewidth=3,
-                  marker="o", markersize=8,
-                  markerfacecolor=c, markeredgecolor="white",
-                  label=n)
-    for c, n in zip(colors, model_names)
+# ── Rows ──────────────────────────────────────────────────────────────────────
+row_height = 1.0 / (n_rows + 1)
+for i, (_, row) in enumerate(display_df.iterrows()):
+    y  = 1.0 - (i + 1) * row_height - row_height * 0.1
+    bg = "#f7f9fc" if i % 2 == 0 else "#eaf0f6"
+
+    ax.add_patch(mpatches.FancyBboxPatch(
+        (0, y - row_height * 0.45), 1, row_height * 0.9,
+        boxstyle="square,pad=0",
+        facecolor=bg, edgecolor="none",
+        transform=ax.transAxes, zorder=0,
+    ))
+
+    x_cursor = 0.0
+    for col, w in zip(col_labels, col_widths):
+        val   = row[col]
+        color = "black"
+        fw    = "normal"
+
+        if col == "Metric":
+            color = "#2c3e50"
+            fw    = "bold"
+        elif col in ("Model 1", "Model 2"):
+            color = model_colors.get(val, "black")
+            fw    = "bold"
+        elif col == "Sig":
+            color = sig_colors.get(val, "#aaaaaa")
+            fw    = "bold"
+        elif col == "Better Model":
+            color = model_colors.get(val, "black")
+            fw    = "bold"
+        elif col == "DM Stat":
+            color = "#27ae60" if row["DM Stat"].startswith("+") else "#c0392b"
+
+        ax.text(x_cursor + w / 2, y, val,
+                ha="center", va="center",
+                fontsize=8.5, color=color, fontweight=fw,
+                transform=ax.transAxes)
+        x_cursor += w
+
+# ── Divider between RMSPE and QLIKE blocks ────────────────────────────────────
+divider_y = 1.0 - 6 * row_height - row_height * 0.55
+ax.add_artist(Line2D(
+    [0, 1], [divider_y, divider_y],
+    transform=ax.transAxes,
+    color="#2c3e50", linewidth=1.5, zorder=5,
+))
+
+# ── Legend ────────────────────────────────────────────────────────────────────
+legend_elements = [
+    mpatches.Patch(facecolor=sig_colors["***"], label="*** p < 0.001"),
+    mpatches.Patch(facecolor=sig_colors["**"],  label="**  p < 0.01"),
+    mpatches.Patch(facecolor=sig_colors["*"],   label="*   p < 0.05"),
+    mpatches.Patch(facecolor=sig_colors[""],    label="Not significant"),
 ]
-handles.append(
-    mlines.Line2D([0], [0], color="grey", linewidth=0,
-                  marker="|", markersize=10, label="Fold estimates")
-)
-fig.legend(handles=handles, loc="lower center", ncol=5,
-           fontsize=9, framealpha=0.7, bbox_to_anchor=(0.5, -0.08))
+ax.legend(handles=legend_elements, loc="lower center",
+          bbox_to_anchor=(0.5, -0.08), ncol=4,
+          fontsize=8.5, framealpha=0.0,
+          facecolor="white", edgecolor="none",
+          title="Significance (BH-corrected)")
 
 plt.tight_layout()
-fig.subplots_adjust(bottom=0.18)
 plt.show()
+
 ```
 
-From @fig-model-comparison, the residual stacker, labelled as QLIKE-LGB, achieves the lowest QLike at 0.0450 in the model comparison. @fig-forecast-stability strengthens this result by showing that its QLike advantage is statistically significant after Benjamini-Hochberg correction against HAR-X, GNN, and GARCH. This means the improvement is not only numerically better, but also statistically supported in the pairwise forecast comparison. Since QLIKE-LGB is trained using a QLike-optimised residual correction, it is better aligned with avoiding poorly calibrated volatility forecasts, making it more suitable for risk-sensitive options pricing and risk management. Its RMSPE of 0.5501 also remains close to HAR-X’s 0.5416, suggesting only a limited sacrifice in point accuracy.
+From , the residual stacker, labelled as QLIKE-LGB, achieves the lowest QLike at 0.0450 in the model comparison.  strengthens this result by showing that its QLike advantage is statistically significant after Benjamini-Hochberg correction against HAR-X, GNN, and GARCH. This means the improvement is not only numerically better, but also statistically supported in the pairwise forecast comparison. Since QLIKE-LGB is trained using a QLike-optimised residual correction, it is better aligned with avoiding poorly calibrated volatility forecasts, making it more suitable for risk-sensitive options pricing and risk management. Its RMSPE of 0.5501 also remains close to HAR-X’s 0.5416, suggesting only a limited sacrifice in point accuracy.
 
 By contrast, the GNN achieves the lowest RMSPE of 0.4121 in Figure 1. The Diebold-Mariano results in Figure 2 also favour GNN under RMSPE against HAR-X, QLIKE-LGB, and GARCH, confirming that its point-forecast advantage is statistically meaningful. This supports the predictive value of modelling cross-stock volatility spillovers. However, the GNN records the weakest QLike of 0.0725, and the QLike-based Diebold-Mariano comparisons favour HAR-X, QLIKE-LGB, and even GARCH over GNN. This shows that closer average point forecasts can still be poorly calibrated under a risk-sensitive loss. Therefore, no model dominates: GNN is best for point accuracy, QLIKE-LGB for conservative calibration, and HAR-X remains the most interpretable balanced benchmark despite slightly weaker headline metrics.
 
