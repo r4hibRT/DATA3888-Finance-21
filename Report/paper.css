@@ -1,0 +1,276 @@
+/* =====================================================================
+   paper.css
+   Academic-paper styling layer for the DATA3888 Quarto HTML report.
+
+   Layers on top of the Bootswatch themes (lux / darkly) and uses
+   Bootstrap 5 CSS variables, so it adapts to both light and dark modes.
+   This file changes presentation only — no document content is altered.
+
+   Drop it next to the .qmd and reference it under format.html.css
+   (after the theme), e.g.:
+
+       css:
+         - https://use.fontawesome.com/releases/v5.0.6/css/all.css
+         - paper.css
+   ===================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap');
+
+/* ---------- 0. Font stacks ------------------------------------------- */
+:root {
+  --paper-serif: "Source Serif 4", "Source Serif Pro", Charter,
+                 "Bitstream Charter", Cambria, Georgia, "Times New Roman", serif;
+  --paper-sans:  ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica,
+                 Arial, sans-serif;
+  --paper-mono:  "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace,
+                 Menlo, Consolas, monospace;
+}
+
+/* ---------- 1. Base typography --------------------------------------- */
+body {
+  font-family: var(--paper-serif);
+  font-size: 1.05rem;
+  line-height: 1.7;
+  font-weight: 400;
+  font-feature-settings: "kern" 1, "liga" 1, "onum" 1, "pnum" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Justified, hyphenated body copy — the classic printed-paper measure */
+main p,
+main li {
+  text-align: justify;
+  text-justify: inter-word;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  -ms-hyphens: auto;
+}
+
+/* Elements that must never be justified / hyphenated */
+main figure,
+main figcaption,
+main pre,
+main table,
+main .cell-output,
+main .katex-display,
+main .math.display {
+  hyphens: manual;
+}
+main figcaption,
+main pre,
+main table {
+  text-align: left;
+}
+
+/* ---------- 2. Headings ---------------------------------------------- */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--paper-serif);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+  text-transform: none;
+  font-feature-settings: "kern" 1, "liga" 1, "lnum" 1;
+}
+
+h2 {
+  font-size: 1.55rem;
+  margin-top: 2.3rem;
+  margin-bottom: 0.7rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+}
+h3 { font-size: 1.28rem; margin-top: 1.9rem; margin-bottom: 0.55rem; }
+h4 { font-size: 1.10rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+h5 { font-size: 1.00rem; font-weight: 700; margin-top: 1.3rem; margin-bottom: 0.4rem; letter-spacing: 0.01em; }
+h6 { font-size: 0.90rem; font-weight: 700; margin-top: 1.2rem; margin-bottom: 0.4rem; }
+
+/* Subordinate, muted section numbers */
+.header-section-number {
+  color: var(--bs-secondary-color, #6c757d);
+  font-weight: 600;
+  font-feature-settings: "lnum" 1, "tnum" 1;
+  margin-right: 0.45em;
+}
+
+/* ---------- 3. Title block ------------------------------------------- */
+#title-block-header {
+  border-bottom: 2px solid var(--bs-border-color, #dee2e6);
+  padding-bottom: 1.25rem;
+  margin-bottom: 2.5rem;
+}
+.quarto-title .title {
+  font-size: 2.4rem;
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  margin-bottom: 0.5rem;
+}
+.quarto-title-meta,
+.quarto-title-authors,
+.quarto-title-author {
+  font-size: 0.95rem;
+  color: var(--bs-secondary-color, #6c757d);
+}
+.quarto-title-meta-heading {
+  font-family: var(--paper-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.70rem;
+  font-weight: 700;
+}
+.quarto-title-author-name {
+  font-weight: 600;
+  color: var(--bs-body-color);
+}
+
+/* ---------- 4. Figures & captions ------------------------------------ */
+main figure,
+.quarto-figure,
+figure.quarto-float {
+  margin-top: 1.9rem;
+  margin-bottom: 1.9rem;
+}
+main figure img {
+  display: block;
+  margin-inline: auto;
+  max-width: 100%;
+  height: auto;
+}
+figcaption,
+.figure-caption,
+.quarto-float-caption,
+.quarto-figure figcaption,
+caption {
+  font-family: var(--paper-sans);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--bs-secondary-color, #6c757d);
+  text-align: center;
+  margin-top: 0.7rem;
+  font-style: normal;
+}
+/* The "Figure N:" label carries the emphasis */
+.quarto-float-caption .quarto-float-caption-figure,
+.quarto-float-caption strong,
+figcaption strong {
+  font-weight: 700;
+  color: var(--bs-body-color);
+}
+
+/* ---------- 5. Tables ------------------------------------------------ */
+main table {
+  font-size: 0.92rem;
+  border-collapse: collapse;
+  margin: 1.6rem auto;
+  font-feature-settings: "lnum" 1, "tnum" 1;
+}
+main th { font-weight: 700; }
+main caption { caption-side: top; }
+
+/* ---------- 6. Math -------------------------------------------------- */
+.katex-display,
+.math.display {
+  margin: 1.3rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.1rem 0;
+}
+
+/* ---------- 7. Code -------------------------------------------------- */
+pre, code, kbd, samp {
+  font-family: var(--paper-mono);
+  font-size: 0.83rem;
+  font-feature-settings: normal;
+}
+div.sourceCode {
+  border: 1px solid var(--bs-border-color, #dee2e6);
+  border-radius: 6px;
+}
+/* Quieter, more paper-like code-fold toggle */
+details.code-fold > summary,
+.code-fold > summary,
+summary.code-fold-summary {
+  font-family: var(--paper-sans);
+  font-size: 0.80rem;
+  color: var(--bs-secondary-color, #6c757d);
+}
+
+/* ---------- 8. Links & citations ------------------------------------- */
+main a {
+  text-decoration-thickness: 0.06em;
+  text-underline-offset: 0.15em;
+}
+a.quarto-xref,
+.citation a,
+a[role="doc-biblioref"] {
+  text-decoration: none;
+}
+a.quarto-xref:hover,
+.citation a:hover {
+  text-decoration: underline;
+}
+
+/* ---------- 9. Table of contents ------------------------------------- */
+nav[role="doc-toc"],
+#TOC {
+  font-family: var(--paper-sans);
+  font-size: 0.84rem;
+}
+nav[role="doc-toc"] > h2,
+#toc-title {
+  font-family: var(--paper-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--bs-secondary-color, #6c757d);
+  border-bottom: none;
+}
+nav[role="doc-toc"] ul > li > a.active {
+  font-weight: 700;
+}
+
+/* ---------- 10. References ------------------------------------------- */
+#refs,
+div.csl-bib-body {
+  font-size: 0.90rem;
+  line-height: 1.5;
+}
+div.csl-entry {
+  margin-bottom: 0.55rem;
+}
+
+/* ---------- 11. Blockquote (e.g. the research question) -------------- */
+main blockquote {
+  border-left: 3px solid var(--bs-border-color, #dee2e6);
+  padding: 0.1rem 0 0.1rem 1.1rem;
+  margin-left: 0;
+  color: var(--bs-body-color);
+  font-style: italic;
+}
+
+/* ---------- 12. Print / PDF export ----------------------------------- */
+@media print {
+  body {
+    font-size: 10.5pt;
+    line-height: 1.45;
+  }
+  /* Hide interactive chrome so a printed/saved PDF reads as a paper */
+  #quarto-sidebar, .sidebar,
+  nav[role="doc-toc"], #TOC,
+  .quarto-code-tools, .code-tools-button,
+  #quarto-header, .quarto-title-tools,
+  .nav-footer, #quarto-back-to-top {
+    display: none !important;
+  }
+  main { max-width: 100% !important; }
+  h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
+  figure, table, pre, .cell, .quarto-figure {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  a { text-decoration: none !important; }
+  @page { margin: 2cm; }
+}

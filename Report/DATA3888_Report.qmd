@@ -4,21 +4,25 @@ author:
         - name: "Finance Group 21"
           affiliation: "The University of Sydney"
 
+lang: en
+
 format:
   html:
-    code-tools: true
-    code-fold: true
-    fig_caption: yes
-    number_sections: yes
-    embed-resources: true
-    theme: 
+    theme:
       light: lux
       dark: darkly
     css:
       - https://use.fontawesome.com/releases/v5.0.6/css/all.css
+      - paper.css
     toc: true
-    toc_depth: 4
-    toc_float: true
+    toc-depth: 4
+    toc-title: "Contents"
+    number-sections: true
+    number-depth: 3
+    code-tools: true
+    code-fold: true
+    link-citations: true
+    embed-resources: true
 bibliography: references.bib
 reference-section-title: "References"
 execute:
