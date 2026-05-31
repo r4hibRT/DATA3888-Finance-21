@@ -460,7 +460,7 @@ Several directions emerge naturally from this study's findings and limitations. 
 
 ## Conclusion
 
-To conclude, the findings provide strong evidence that heterogeneous ensemble methods can outperform classical benchmarks for short-term volatility forecasting using high-frequency order book data. The Residual Stacker reduces QLike by 11.9% over Base HAR and the GNN Hybrid reduces RMSPE by 23.9%, both statistically significant. High-frequency order book data contains predictive structure beyond what classical HAR captures, and ensemble methods are effective at extracting it.
+This study set out to investigate whether a heterogeneous ensemble of forecasting models can systematically outperform classical benchmarks for 2-minute-ahead realised volatility prediction. The evidence supports an affirmative but nuanced answer. The Residual Stacker achieves an 11.9% reduction in QLike over HAR-X, and the GNN Hybrid achieves a 23.9% reduction in RMSPE, both statistically significant under Diebold-Mariano testing. High-frequency order book data contains predictive structure beyond what classical linear models capture, and ensemble methods are effective at extracting it. However, no single ensemble dominates across both metrics, suggesting that choosing appropriate forecasting architecture is to be resolved with evaluating the downstream task.
 
 ## Student Contributions
 
