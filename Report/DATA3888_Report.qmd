@@ -89,7 +89,23 @@ These findings motivate models that can capture both cross-sectional structure a
 
 ## Methodology
 
-**ADD WORKFLOW DIAGRAM**
+```{python}
+#| label: fig-workflow
+#| fig-cap: "Workflow Diagram of our study"
+#| echo: false
+
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
+img = mpimg.imread("workflow diagram.png")
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.imshow(img)
+ax.axis("off")
+
+plt.tight_layout()
+plt.show()
+```
 
 ### Preprocessing
 
@@ -107,7 +123,7 @@ All models are evaluated under 5-fold cross-validation with GroupKFold on stock_
 
 ```{python}
 #| label: fig-rmpse-vs-qlike
-#| fig-cap: "RMSPE and QLike loss functions plotted against the forecast-to-realised volatility ratio. RMSPE penalises under- and overprediction symmetrically, while QLike penalises underprediction more heavily, reflecting the higher cost of underestimating risk."
+#| fig-cap: "RMSPE and QLike loss functions plotted against the forecast-to-realised volatility ratio."
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -116,7 +132,7 @@ r = np.linspace(0.05, 4.0, 500)
 rmspe = np.abs(1 - r)
 qlike = 1/r + np.log(r) - 1
 
-fig, ax = plt.subplots(figsize=(10, 6), dpi=200)
+fig, ax = plt.subplots(figsize=(8, 5), dpi=100)
 fig.patch.set_facecolor('white')
 
 ax.plot(
@@ -180,7 +196,9 @@ ax.grid(alpha=0.15)
 plt.show()
 ```
 
-Two metrics are used in combination, as neither alone is sufficient. RMSPE, defined as $\sqrt{\frac{1}{n}\sum_{i=1}^{n}\left(\frac{y_i-\hat{y}_i}{y_i}\right)^2}$ , measures proportional prediction error symmetrically. QLike, defined as $\frac{\sigma}{\hat{\sigma}} - \log\left(\frac{\sigma}{\hat{\sigma}}\right) - 1$ , penalises under-prediction more heavily, reflecting the asymmetric cost of underestimating risk in options pricing. [@patton2011volatility]. Although a low QLike can be achieved by a model that systematically overpredicts, due to the fact the loss function is lenient toward overestimation; it does not, on its own, indicate forecast accuracy. RMSPE is therefore needed to confirm that predictions are close to realised values, while QLike ensures that residual errors lean toward the conservative side. The preferred model is one that achieves both low RMSPE and low QLike. 
+Two metrics are used in combination, as neither alone is sufficient.
+
+As seen in @fig-rmpse-vs-qlike\\, RMSPE, defined as $\sqrt{\frac{1}{n}\sum_{i=1}^{n}\left(\frac{y_i-\hat{y}_i}{y_i}\right)^2}$ , measures proportional prediction error symmetrically. QLike, defined as $\frac{\sigma}{\hat{\sigma}} - \log\left(\frac{\sigma}{\hat{\sigma}}\right) - 1$ , penalises under-prediction more heavily, reflecting the asymmetric cost of underestimating risk in options pricing. [@patton2011volatility]. Although a low QLike can be achieved by a model that systematically overpredicts, due to the fact the loss function is lenient toward overestimation; it does not, on its own, indicate forecast accuracy. RMSPE is therefore needed to confirm that predictions are close to realised values, while QLike ensures that residual errors lean toward the conservative side. The preferred model is one that achieves both low RMSPE and low QLike. 
 
 ### Benchmark Models
 
@@ -303,7 +321,7 @@ def add_bracket(ax, x1, x2, y, text, arm_frac=0.015):
         text, ha="center", va="bottom", fontsize=13,
     )
 
-fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+fig, axes = plt.subplots(1, 2, figsize=(8, 5))
 x         = np.arange(len(model_names))
 harx_idx  = model_names.index("HAR-X")
 
@@ -344,11 +362,11 @@ fig.subplots_adjust(left=0.12, wspace=0.35)
 plt.show()
 ```
 
-The results show that model performance is not uniformly improved by greater complexity. HAR-X remains the most interpretable and balanced reference point because it improves on HAR by adding exogenous liquidity and order-book variables, achieving an RMSPE of 0.5416 and QLike of 0.0511. This suggests that short-horizon volatility is shaped not only by volatility persistence, but also by immediate trading frictions such as spread, volume, and order imbalance.
+The results as seen above in @fig-model-comparison show that model performance is not uniformly improved by greater complexity. HAR-X remains the most interpretable and balanced reference point because it improves on HAR by adding exogenous liquidity and order-book variables, achieving an RMSPE of 0.5416 and QLike of 0.0511. This suggests that short-horizon volatility is shaped not only by volatility persistence, but also by immediate trading frictions such as spread, volume, and order imbalance.
 
 ```{python}
 #| label: fig-forecast-stability
-#| fig-cap: "5-fold forecast stability. The confidence intervals show that the QLIKE-LGB and GNN advantages are stable across folds. Points show fold-level estimates, filled circles show the mean, and horizontal bars span the 95% t-interval. Dashed line marks the HAR-X mean for reference."
+#| fig-cap: "5-fold forecast stability. Points show fold-level estimates, filled circles show the mean, and horizontal bars span the 95% t-interval. Dashed line marks the HAR-X mean for reference."
 #| echo: false
 import numpy as np
 import pandas as pd
@@ -376,7 +394,7 @@ def compute_ci(fold_values, confidence=0.95):
     ci   = stats.t.interval(confidence, df=len(arr) - 1, loc=mean, scale=se)
     return mean, ci[0], ci[1]
 
-fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+fig, axes = plt.subplots(1, 2, figsize=(8, 5))
 
 for ax, (metric_name, fold_data) in zip(axes, [
     ("QLIKE", fold_qlike_metrics),
@@ -436,7 +454,7 @@ fig.subplots_adjust(bottom=0.18)
 plt.show()
 ```
 
-The ensemble results should be interpreted through the evaluation strategy. As discussed earlier, RMSPE measures proportional point error symmetrically, while QLike penalises volatility underprediction much more severely and is relatively more tolerant of overprediction. This explains why QLIKE-LGB achieves the lowest QLike at 0.0450 in the model comparison chart. The confidence-interval chart further shows that this QLike advantage is stable across the 5-fold cross-validation, while the Diebold-Mariano tests confirm that the improvement is statistically significant against HAR-X, GNN, and GARCH. Since QLIKE-LGB is trained using a QLike-optimised residual correction, it learns to avoid underestimating volatility, making it better suited to risk-sensitive options pricing. However, its weaker RMSPE shows that conservative calibration does not necessarily produce the closest proportional forecasts. 
+The ensemble results should be interpreted through the evaluation strategy. As discussed earlier, RMSPE measures proportional point error symmetrically, while QLike penalises volatility underprediction much more severely and is relatively more tolerant of overprediction. This explains why QLIKE-LGB achieves the lowest QLike at 0.0450 in the model comparison chart. @fig-forecast-stability further shows that this QLike advantage is stable across the 5-fold cross-validation, while the Diebold-Mariano tests confirm that the improvement is statistically significant against HAR-X, GNN, and GARCH. Since QLIKE-LGB is trained using a QLike-optimised residual correction, it learns to avoid underestimating volatility, making it better suited to risk-sensitive options pricing. However, its weaker RMSPE shows that conservative calibration does not necessarily produce the closest proportional for
 
 By contrast, the GNN achieves the lowest RMSPE of 0.4121 in the performance chart, and the confidence-interval chart shows this advantage is also consistent across folds. This supports the predictive value of cross-stock volatility spillovers. Although the Diebold-Mariano tests also favour GNN under RMSPE, the comparison against GARCH should be interpreted cautiously because GARCH shows much wider fold-level variation. More importantly, the GNN’s weakest QLike of 0.0725 shows that closer average point forecasts can still be poorly calibrated when errors lean toward underprediction.
 
@@ -444,9 +462,7 @@ Overall, the results indicate a clear trade-off between point accuracy and risk-
 
 #### Product
 
-**(ADD IMAGE OF DASH APP maybe in appendix?)**
-
-While the research question focuses on whether heterogeneous ensembles outperform classical volatility forecasting benchmarks, practitioners also need to understand when those improvements occur and whether they are robust across different stocks and market conditions. To make the results visualisable to the user, an interactive volatility monitoring dashboard was built using Plotly Dash, as illustrated in **Figure ?**. 
+While the research question focuses on whether heterogeneous ensembles outperform classical volatility forecasting benchmarks, practitioners also need to understand when those improvements occur and whether they are robust across different stocks and market conditions. To make the results visualisable to the user, an interactive volatility monitoring dashboard was built using Plotly Dash, as illustrated in @fig-dash-app in the appendix. 
 
 The Dash App helps explore the research question by allowing the user to compare the benchmark models (GARCH and HAR-X) to the ensemble models (GNN and Residual Stacker). By visualising the actual realised volatility alongside the model predictions, the dashboard highlights situations where ensemble methods provide superior forecasts compared to the benchmarks, revealing patterns to users that aggregate metrics alone cannot capture. This enables practitioners to interpret the models’ relative strengths and apply the most appropriate forecasting approach depending on the trading environment and risk priorities.
 
@@ -463,3 +479,20 @@ Future work could address several remaining gaps. Fitting GARCH over a longer wi
 ## Student Contributions
 
 ## Appendix {.appendix}
+
+```{python}
+#| label: fig-dash-app
+#| fig-cap: "Volatility Regime Monitor dashboard showing model predictions across stocks."
+#| echo: false
+
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
+img = mpimg.imread("../DashApp/dashapp.png")
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.imshow(img)
+ax.axis("off")
+plt.tight_layout()
+plt.show()
+
+```
