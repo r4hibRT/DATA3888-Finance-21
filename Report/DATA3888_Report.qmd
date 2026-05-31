@@ -29,185 +29,437 @@ execute:
 
 ## Executive Summary
 
-Accurate short-term volatility forecasts are essential inputs to options pricing and risk management, yet the Black-Scholes model requires forward-looking volatility estimates that historical averages alone cannot reliably provide. Using high-frequency limit order book data provided by Optiver, we investigate whether a heterogeneous ensemble of forecasting models can systematically outperform classical benchmarks for 2-minute-ahead realised volatility prediction.
+**Background:** Volatility forecasting sits at the core of options pricing and risk management. The Black-Scholes model, the foundation of modern derivatives pricing, requires a reliable estimate of future volatility that historical averages alone cannot reliably provide. Using high-frequency limit order book data provided by Optiver, we investigate whether a heterogeneous ensemble of forecasting models can systematically outperform classical benchmarks for 2-minute-ahead realised volatility prediction 
 
-We evaluate five models: Base HAR and GARCH as classical benchmarks, HAR-X as an augmented baseline, and two ensemble approaches: a Residual Stacker with QLike-optimised correction and a Graph Neural Network (GNN) with a learned HAR blend. Models are assessed on RMSPE and QLike loss, which together capture both point accuracy and the asymmetric cost of forecast errors relevant to options pricing.
+**Methodology:** To do so, we evaluate four models: The GARCH family as a classical benchmark, HAR-X as an augmented industry baseline, and two ensemble approaches: a Residual Stacker with QLike-optimised correction and a Graph Neural Network (GNN) with a learned HAR blend. These models are assessed on RMSPE and QLike loss metrics, which together capture both point accuracy and the asymmetric cost of forecast errors relevant to options pricing. 
 
-Results reveal a metric-dependent trade-off: the Residual Stacker achieves the lowest QLike (0.045), outperforming all benchmarks including Base HAR (0.051) and GARCH (0.055), while the GNN Hybrid achieves the lowest RMSPE (0.381), a \~29% reduction over Base HAR (0.539), but at the cost of elevated QLike (0.072). No single ensemble dominates across both metrics.
+**Findings:** The results demonstrate that ensemble methods improve upon classical benchmarks, though the nature of improvement depends on the objective: the Residual Stacker achieves the lowest QLike (0.045), outperforming all benchmarks including HAR-X (0.051) and GARCH (0.055), while the GNN Hybrid achieves the lowest RMSPE (0.417), a \~15% reduction over HAR-X(0.445), but at the cost of elevated QLike (0.072). No single ensemble dominates across both metrics.
 
-These results demonstrate that classical HAR benchmarks can be meaningfully improved through ensemble methods, with direct implications for options pricing, risk limit-setting, and market-making contexts where volatility forecast accuracy directly determines the quality of pricing and hedging decisions.
+**Conclusion:** These results suggest that model selection in volatility forecasting cannot be reduced to a single metric and the appropriate ensemble depends on whether the downstream task penalises miscalibration or magnitude error. To support reproducibility and practical evaluation, the analysis is accompanied by an interactive Plotly Dash monitoring tool enabling inspection of model predictions across stocks and per-stock risk decomposition, facilitating translation of forecast methodology into applied risk workflows.  
 
 ## Background
 
 ### History
 
-At the core of options pricing lies an uncomfortable truth: the Black–Scholes model needs a forward-looking volatility estimate, but future volatility is unobservable. For years, GARCH-family models filled this gap by inferring volatility from daily returns. They worked reasonably well, but high-frequency limit order book data eventually made a better approach possible.
+At the core of options pricing lies a fundamental challenge: the Black-Scholes model requires a forward-looking volatility estimate, yet future volatility remains inherently unobservable. GARCH-family models addressed this by inferring conditional volatility from daily return sequences, establishing the early standard for volatility forecasting [@ghysels2006predicting]. The availability of high-frequency limit order book data, however, made more granular approaches possible.
 
-Corsi built on this with HAR-RV, which regresses future RV on lagged RV at multiple horizons to capture how traders operating on different timescales collectively shape volatility [@corsi2009har]. Simple, interpretable, and consistently hard to beat out-of-sample, HAR became the de facto industry standard. For Optiver, a global electronic market maker pricing and hedging options in real time, it is the practical baseline to work from.
+Corsi formalised this with the Heterogeneous Autoregressive model of Realised Volatility (HAR-RV), which regresses future realised volatility on lagged RV at multiple horizons, capturing the heterogeneous time scales at which different market participants operate. [@corsi2009har] Despite its parsimony, HAR-RV has proven consistently difficult to outperform out-of-sample, cementing its status as the de facto industry benchmark. For Optiver, a global electronic market maker pricing and hedging options in real time, it represents the practical baseline against which any proposed improvement must be evaluated.
 
 ### Motivation & Research Question
 
-HAR does, however, have clear limits. It treats every stock independently, ignoring the reality that volatility shocks tend to ripple across the market simultaneously. It also captures only linear structure, leaving potential signal in order-book dynamics, spread widening, volume imbalances, depth shifts, on the table. Whether ensemble methods can close that gap consistently is what this study investigates:
+HAR-RV's limitations are well-documented, yet its out-of-sample robustness has proven remarkably difficult to overcome. Rather than replacing HAR, this study investigates whether heterogeneous ensemble methods can exploit HAR's robustness as a foundation. To do so, the ensemble methods extend it with nonlinear correction and cross-stock structure to capture signals that a linear, stock-independent model cannot. Both ensemble approaches proposed here are architecturally constrained to improve on HAR rather than circumvent it. As such, any measured gain is more plausibly attributable to what the ensemble adds beyond the baseline. This motivates the central research question:
 
-*Can a heterogeneous ensemble of volatility forecasting models outperform individual classical benchmarks for short-term volatility forecasting using high-frequency order book data?*
+*Can a heterogeneous ensemble of volatility forecasting models systematically outperform individual classical benchmarks for short-term volatility forecasting using high-frequency order book data?*
 
 ### Exploratory Data Analysis
 
-**(ADD FIGURE OF RV)**
+```{python}
+#| label: fig-eda-target-distribution
+#| fig-cap: "Distribution of log-realised volatility across all forecast windows."
+#| echo: false
 
-The Optiver dataset covers 112 stocks at per-second resolution, with each 10-minute window split into an 8-minute input period and a 2-minute forecast target, recording six features: weighted average price, bid-ask spread, total volume, price spread, log return, and volume imbalance.
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 
-Exploratory analysis shaped nearly every modelling decision that followed. Features vary enormously across stocks, a bid-ask spread of 0.001 means something very different for a cheap stock than an expensive one, making normalisation and per-stock model fitting essential. The target log(RV) is approximately Gaussian after log transformation, though volatility levels differ substantially across stocks and a small fraction of windows show no price movement, requiring a noise floor. Input-window RV was by far the strongest predictor of target RV, validating the HAR autoregressive structure, while spread and volume added incremental signal supporting the augmented models.
+img = mpimg.imread("../eda_pictures/eda_target_distribution.png")
 
-Finally, four cross-stock tests, pairwise correlation, Granger causality, permutation testing, and lead-lag analysis, all converged on the same finding: volatility co-moves across stocks in ways that are statistically genuine and predictively useful, making the case for the GNN approach.
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.imshow(img)
+ax.axis("off")
+
+plt.show()
+```
+
+The Optiver dataset covers 112 stocks at per-second resolution, with the study splitting each 10-minute window into an 8-minute input period and a 2-minute forecast target.
+
+**Finding 1: Cross-stock heterogeneity is extreme.** Per-stock summary statistics show that mean bid-ask spreads range across three orders of magnitude and mean per-second volume ranges from double digits to tens of thousands. A spread of 0.001 on a stock with WAP near 1.0 is economically very different from the same spread on a stock trading at a different price level. This makes per-stock model fitting and within-stock z-scoring of features essential before any pooled or cross-stock modelling.
+
+**Finding 2: Log-RV is approximately Gaussian with stock-level shifts.** The forecast target, $log⁡RV$ computed over seconds 480–599, has a pooled mean of –6.612 and standard deviation of 0.709 across 343,145 windows. Only 7 windows (0.002%) have exactly zero price movement, and roughly 0.1% of windows fall below the noise floor of $log(10^{-4}) = -9.21$. The near-Gaussian shape after log transformation supports OLS fitting in log-space (as HAR and HAR-X do) and means the noise floor affects a negligible fraction of observations.
+
+**Finding 3: Volatility co-moves strongly across stocks, but contemporaneously rather than predictively.** Four cross-stock tests were run on the $112 \times 3064$ panel of $logRV$
+
+-   Pairwise Pearson correlation across all 6,216 stock pairs yields a mean of 0.672 with 100% of pairs positive and 97% above 0.5, an unusually strong level of co-movement.
+
+-   Permutation testing (100 shuffles of stock labels within each `time_id`) confirms this is genuine structure: the real mean correlation (0.672) exceeds the null mean (0.519) with a z-score of 7,230 $(p \approx 0 )$.
+
+-   Granger causality (lag = 3, 200 randomly sampled directed pairs), however, finds only 0.5% of pairs significant at $\alpha = 0.05$, which is \*below\* the 5% expected by chance. A binomial test yields $p=1.0$, confirming no excess predictive causality.
+
+-   Lead-lag correlation reinforces this: same-time correlation is strong (mean = 0.670), but lagged correlation is effectively zero (mean = –0.012, no pairs above \|0.1\|).
+
+These findings motivate models that can capture both cross-sectional structure and nonlinear microstructure effects.
 
 ## Methodology
 
-### Data and Feature Engineering
+**ADD WORKFLOW DIAGRAM**
 
-The dataset consists of per-second limit order book snapshots from Optiver across 112 stocks. Each 10-minute window is partitioned into an input period (seconds 0–479) and a forecast target (seconds 480–599).
+### Preprocessing
 
-From the raw order book, six features are computed per second: WAP, log return, bid-ask spread, total volume, price spread, and depth imbalance. The forecast target is defined as:
+From the raw order book, six features are computed per second: WAP, log return, bid-ask spread, total volume, price spread, and depth imbalance. Since some seconds contain no order book updates, the data is forward-filled to maintain a continuous one-second grid before feature computation. The forecast target is defined as:
 
 $$
 \text{RV} = \sqrt{\sum r_t^2}
 $$
 
-over seconds 480–599, with the model trained to predict $\log(RV)$, floored at $10^{-4}$.
+over seconds 480–599, with the model trained to predict $logRV$, floored at $10⁻⁴$. Five-fold cross-validation is constructed using GroupShuffleSplit on `time_id` (80/20 split).
 
-Five-fold cross-validation is constructed using GroupShuffleSplit on `time_id` (80/20 split), ensuring no trading window appears in both train and test sets.
+### Evaluation Strategy
+
+All models are evaluated under 5-fold cross-validation with GroupKFold on stock_id, where each fold holds out a distinct subset of stocks completely unseen during training since `time_id` is non-sequential and arbitrary, grouping by stock_id ensures the split tests cross-stock generalization rather than temporal extrapolation. Out-of-fold predictions are concatenated across all five folds to produce a single set of predictions covering the entire dataset, on which RMSPE and QLike are computed. Pairwise Diebold–Mariano tests with Newey-West HAC variance estimation (lag truncation $h = n^{1/3}$) are conducted on these out-of-fold residuals across all model combinations under both metrics. Benjamini–Hochberg FDR correction is applied to the resulting 12 simultaneous tests, preferred over Bonferroni given the shared data and fold structure, keeping only the significant results after correction.
+
+```{python}
+#| label: fig-rmpse-vs-qlike
+#| fig-cap: "RMSPE and QLike loss functions plotted against the forecast-to-realised volatility ratio. RMSPE penalises under- and overprediction symmetrically, while QLike penalises underprediction more heavily, reflecting the higher cost of underestimating risk."
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+r = np.linspace(0.05, 4.0, 500)
+rmspe = np.abs(1 - r)
+qlike = 1/r + np.log(r) - 1
+
+fig, ax = plt.subplots(figsize=(10, 6), dpi=200)
+fig.patch.set_facecolor('white')
+
+ax.plot(
+    r, rmspe,
+    color='#3266ad',
+    linewidth=2.5,
+    label='RMSPE  |1 − r|'
+)
+
+ax.plot(
+    r, qlike,
+    color='#d85a30',
+    linewidth=2.5,
+    linestyle='--',
+    label='QLIKE  1/r + ln(r) − 1'
+)
+
+
+ax.axvline(
+    x=1,
+    color='grey',
+    linewidth=0.8,
+    linestyle=':'
+)
+
+ax.set_xlim(0, 4)
+ax.set_ylim(0, 5)
+ax.set_xlabel(r'r = $F_t$ / $RV_t$', fontsize=13)
+ax.set_ylabel('Per-observation loss', fontsize=13)
+ax.set_title(
+    'RMSPE vs QLIKE Loss Functions for Realised Volatility',
+    fontsize=14,
+    pad=20
+)
+
+fig.subplots_adjust(left=0.1, right=0.98, top=0.90, bottom=0.18)
+
+ax.legend(frameon=False, fontsize=10, loc='upper right')
+
+ax.text(
+    0.25, 0.7,
+    '← Underprediction',
+    transform=ax.transAxes,
+    fontsize=11,
+    color='grey',
+    ha='center'
+)
+
+ax.text(
+    0.75, 0.7,
+    'Overprediction →',
+    transform=ax.transAxes,
+    fontsize=11,
+    color='grey',
+    ha='center'
+)
+
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+ax.grid(alpha=0.15)
+plt.show()
+```
+
+Two metrics are used in combination, as neither alone is sufficient. RMSPE, defined as $\sqrt{\frac{1}{n}\sum_{i=1}^{n}\left(\frac{y_i-\hat{y}_i}{y_i}\right)^2}$ , measures proportional prediction error symmetrically. QLike, defined as $\frac{\sigma}{\hat{\sigma}} - \log\left(\frac{\sigma}{\hat{\sigma}}\right) - 1$ , penalises under-prediction more heavily, reflecting the asymmetric cost of underestimating risk in options pricing. [@patton2011volatility]. Although a low QLike can be achieved by a model that systematically overpredicts, due to the fact the loss function is lenient toward overestimation; it does not, on its own, indicate forecast accuracy. RMSPE is therefore needed to confirm that predictions are close to realised values, while QLike ensures that residual errors lean toward the conservative side. The preferred model is one that achieves both low RMSPE and low QLike. 
 
 ### Benchmark Models
 
-#### GARCH(1,1)
+#### GARCH
 
 The Generalised Autoregressive Conditional Heteroskedasticity (GARCH) family acts as a classical benchmark for forecasting volatility. These GARCH models work by estimating the conditional variance of returns given the historical market information [@engle_garch101; @vlab_garch]. These models are still used widely in industry due to their ability to deal with volatility clusters and heteroskedasticity within financial return data [@engle_garch101]. Despite the emergence of machine learning and other realised volatility approaches, GARCH remains a standard benchmark for which other more complex models are evaluated against.
 
-The GARCH model used in this study is a GARCH(1,1) specification, fitted independently per (stock_id, time_id), using logarithmic returns derived from Weighted Average Price (WAP). The model works by taking the first 480 seconds of returns as inputs and fits a GARCH(1,1) specification onto it, following the formula:
+The GARCH model used in this study is a GARCH(1,1) specification, fitted independently per (`stock_id`, `time_id`), using logarithmic returns derived from Weighted Average Price (WAP). The model works by taking the first 480 seconds of returns as inputs and fits a GARCH(1,1) specification onto it, following the formula:
 
 $$\sigma_t^2 = \omega + \alpha \sigma_{t-1}^2 + \beta \sigma_{t-1}^2 $$
 
 where $\varepsilon_t = \sigma_t z_t$ and $z_t$ is a standard noise process. [@vlab_garch]
 
-Once fitted, the model produces a multi-step forecast over the next 120 seconds by projecting the conditional variance forward recursively, which is then aggregated to produce a single realised-volatility estimate. The resulting forecasts are evaluated using five-fold cross-validation, consistent with the evaluation framework used for the other models in this study.
-
-#### HAR
-
-The Heterogeneous Autoregressive Realised Volatility model (HAV-RV) serves as the primary industry benchmark following Corsi [@corsi2009har] The model is adapted to the intraday setting using three predictors: log-realised volatility over the full 8-minute input window, the final 2-minute bucket, and their log-ratio which is a reparameterisation that preserves the heterogeneous lag structure while capturing relative volatility acceleration. The model is fitted independently per stock via OLS under 5-fold cross-validation, with predictions generated in log-volatility space and exponentiated back to the volatility scale.
+Once fitted, the model produces a multi-step forecast over the next 120 seconds by projecting the conditional variance forward recursively, which is then aggregated to produce a single realised-volatility estimate.
 
 #### HAR-X
 
-The Heterogeneous Autoregressive with eXogenous variables (HAR-X) model follows the realised-volatility forecasting idea, using very detailed price changes during the day to estimate how volatile the market is: instead of only looking at daily prices, it looks at many small price movements inside one day. By adding up the squared returns from these small movements, we can measure realised volatility. Hence more intraday price movement indicates higher realised volatility. This idea is commonly used in realised-volatility research, such as Andersen et al. [@andersen2003realized].
+HAR-X serves as the augmented industry baseline, extending the HAR-RV framework of Corsi (2009) by incorporating order-book microstructure features alongside realised volatility lags [@corsi2009har]. The model regresses log-realised volatility over the forecast window on three heterogeneous RV components: the full 8-minute input window, the final 2-minute bucket, and the intermediate 4-minute window which translates volatility persistence across intraday horizons following Andersen et al. (2003). [@andersen2003realized]
 
-However, stock price volatility is not only affected by the past volatility, it is also highly affected by the market condition. Under the HAR-X model, volatility is not only driven by past volatility. It is also related to how easy or hard it is to trade the stock, which helps to describe the condition of the order book during the input window. Given this, we need to consider the market condition with liquidity features including bid-ask spread, total order-book volume, volume imbalance. For example: the gap between the best ask and best bid are small indicating high liquidity, this is because the market is easy to trade with lower transaction cost, which leads to a more stable price.
+A meaningful ensemble evaluation requires a baseline that already exploits the most accessible predictive signal. By augmenting HAR with bid-ask spread, total order-book volume, and volume imbalance, HAR-X absorbs the straightforward gains from microstructure information that a pure RV model cannot access. Any further improvement achieved by the ensemble approaches therefore reflects nonlinear or cross-stock structure that a linear, stock-independent model cannot capture making HAR-X a more rigorous point of comparison than HAR alone.
 
-To calculate the realised volatility in the future 2-minute window:
-
-\begin{aligned}
-\log(\text{target\_rv}_{480\_600}) =\;& \beta_0 \\
-&+ \beta_1 \cdot \log(\text{rv}_{360\_480}) \\
-&+ \beta_2 \cdot \log(\text{rv}_{240\_480}) \\
-&+ \beta_3 \cdot \log(\text{rv}_{0\_480}) \\
-&+ \beta_4 \cdot \log(\text{spread\_mean}_{0\_480}) \\
-&+ \beta_5 \cdot \log(\text{spread\_max}_{0\_480}) \\
-&+ \beta_6 \cdot \log(\text{volume\_sum}_{0\_480}) \\
-&+ \beta_7 \cdot \text{volume\_imbalance\_mean}_{0\_480} \\
-&+ \text{error}
-\end{aligned}
-
-The model computes $$\log(\text{target\_rv}_{480_600})$$ using linear regression. The prediction is then transformed back to the realised-volatility scale:
-
-$$
-\text{predicted\_rv}_{480\_600} = \exp(\text{predicted\_log\_rv})
-$$
-
-This approach was chosen because it is interpretable fast to train and predict, given that it is consistent with HAR-RV literature and suitable for stock-level volatility forecasting.
-
-The innovation is extending a conventional HAR-RV model into a stock-level HAR-X model by adding liquidity and order-book microstructure features. A conventional HAR-RV model only uses volatility history, our HAR-X model adds information about the trading environment. This allows the model to distinguish between two stocks with similar recent volatility but different liquidity conditions. For example: Higher volume/depth usually means there are more orders available near the current price. High depth means larger trades can be absorbed hence the price impact is smaller and leads to lower future volatility.
+The model is estimated via OLS in log-volatility space with predictions exponentiated back to the RV scale, consistent with the log-normal treatment adopted throughout.
 
 ### Ensemble Models
 
+Given the strength of HAR-X as a linear baseline, we now introduce two ensemble approaches designed to extend it in complementary ways.
+
 #### Residual Stacker with QLike-optimised correction
 
-The Residual Stacker is a two stage ensemble that augments the HAR-RV baseline with a LightGBM residual correction layer [@ai2024lightgbm]. In the first stage, per-stock HAR predictions are generated via nested 5-fold cross validation to produce out-of-fold residuals on a training set, a stacking design that prevents data leakage in the correction stage. In the second stage, LightGBM is trained to predict these residuals using 42 engineered features derived from the order book, selected via a three-stage pipeline of mutual information filtering, SHAP-based importance ranking, and permutation importance[ ](https://link.springer.com/article/10.1186/s40537-024-00905-w%5D,)[@wang2024shap], spanning realised volatility lags, bid-ask spread dynamics, return distribution moments, and cross-stock z-scores. The final prediction combines both stages:
+The Residual Stacker is a two-stage ensemble that augments the HAR-RV baseline with a LightGBM residual correction layer. It was selected in this study for its demonstrated speed advantage over XGBoost and **GBDT** alternatives at equivalent predictive accuracy [@ke2017lightgbm]. In the first stage, per-stock HAR predictions are generated via nested 5-fold cross validation to produce out-of-fold residuals on a training set. This acts as a stacking design that prevents data leakage in the correction stage. In the second stage, LightGBM is trained to predict these residuals using 42 engineered features derived from the order book, selected via a three-stage pipeline. This consists of **mutual information filtering**, SHAP-based importance ranking, and permutation importance, spanning realised volatility lags, bid-ask spread dynamics, return distribution moments, and cross-stock z-scores [@wang2024feature]. The final prediction combines both stages:
 
 $$
 \hat{y} = \exp(\log \sigma_{\text{HAR}} + f_{\text{LGB}}(x))
 $$
 
-The architecture is designed so that any improvement over HAR primarily reflect nonlinear structure in the residuals that OLS cannot capture, isolating the contribution of machine learning to volatility forecasting. The correction model is trained directly on a custom QLike objective with analytic gradient and Hessian. QLike is a robust loss function specifically suited to volatility forecast evaluation [@patton2011volatility], penalising underestimation more heavily than overestimation in a manner consistent with the asymmetric cost structure of options mispricing.
+The correction model is then trained directly on a custom QLike objective with analytic gradient and Hessian. This architecture is designed so that any improvement over HAR primarily reflects the nonlinear structure in the residuals that OLS cannot capture, isolating the contribution of machine learning to volatility forecasting.
 
 #### Spatio-Temporal GNN with learned HAR blend
 
-The spatio-temporal GNN addresses HAR's core limitation: it treats every stock independently. In reality, volatility shocks co-move across stocks, and spatio-temporal GNNs have demonstrated superior performance over traditional models in cross-sectional time series forecasting by explicitly modelling both spatial dependencies between nodes and temporal dynamics within each node spatio-temporal GNNs have demonstrated superior performance over traditional models [@alshahil2023stgnn].
+The spatio-temporal GNN addresses HAR's core limitation: it treats every stock independently. In reality, volatility shocks co-move across stocks, and spatio-temporal GNNs have demonstrated superior performance over traditional models in cross-sectional time series forecasting by explicitly modelling both spatial dependencies between nodes and temporal dynamics within each node [@alshahil2023stgnn].
 
-The model encodes each stock's 8-bucket sequence using a Mamba selective state-space temporal encoder, then constructs a dynamic learned graph where each stock attends to its top ten most relevant neighbours via GATv2 message passing. A cross-stock attention layer captures any residual market-wide co-movement the sparse graph misses.
+The model encodes each stock's 8-bucket sequence using a **Mamba** selective state-space temporal encoder, then constructs a dynamic learned graph where each stock attends to its top ten most relevant neighbours via **GATv2** message passing. A cross-stock attention layer captures any residual market-wide co-movement that the **sparse graph** misses.
 
-Critically, the GNN does not replace HAR, it is architecturally constrained to improve on it. A linear HAR branch runs in parallel, and a sigmoid-gated scalar weight ( w ) blends the two paths:
+A linear HAR branch runs in parallel, and a **sigmoid-gated scalar** weight w blends the two paths:
 
 $$
 \hat{y} = w \cdot \hat{y}_{\text{HAR}} + (1 - w) \cdot \hat{y}_{\text{GNN}}
 $$
 
-If the GNN contributes nothing, ( w ) converges to 1 and the model reduces to HAR. This makes the architecture self-regularising and directly answers the research question: any improvement over the benchmark is attributable to the cross-stock structure the GNN adds. A learnable per-stock bias term absorbs any remaining systematic level shift, and training minimises a composite loss of
-
-$$
-0.3 \cdot \text{RMSPE} + 0.5 \cdot \text{QLike} + 0.2 \cdot \text{Spread}
-$$
-
-with the spread penalty updated adaptively per stock each epoch to discourage over-confident forecasts.
-
-### Evalution Strategies
-
-Two metrics are used. RMSPE measures proportional prediction error symmetrically. QLike, defined as
-
-$$
-\frac{\sigma}{\hat{\sigma}} - \log\left(\frac{\sigma}{\hat{\sigma}}\right) - 1
-$$
-
-penalises under-prediction more heavily, reflecting the asymmetric cost of underestimating risk in options pricing.
-
-Statistical significance of performance differences is assessed using the Diebold-Mariano test, providing a formal p-value for the null hypothesis that two models produce equivalent forecast errors.
-
-All models are evaluated under 5-fold cross-validation with GroupShuffleSplit, reporting per-fold mean across both metrics.
+If the GNN contributes nothing, w converges to 1 and the model reduces to HAR. This makes the architecture self-regularising and directly answers the research question: any improvement over the benchmark is attributable to the cross-stock structure the GNN adds. Hence, the GNN does not replace the HAR model, it is constrained to improve upon it.
 
 ## Results
 
-**(ADD IMAGE OF RESULTS)**
+```{python}
+#| label: fig-model-comparison
+#| fig-cap: "Out-of-sample forecast evaluation across models. QLIKE and RMSPE computed on realised variance. Brackets denote Diebold-Mariano significance vs HAR-X (*** p < 0.01)."
 
-Overall, the results indicate that heterogeneous extensions to the HAR benchmark improved short-horizon volatility forecasting, although the preferred model depends on the evaluation criterion. As shown in the final cross-validated comparison, Base HAR recorded an RMSPE of 0.539 and QLike of 0.051, while GARCH performed weakest overall with an RMSPE of 0.670 and QLike of 0.055. This suggests that, in this high-frequency setting, realised-volatility-style models derived from intraday order-book information were more effective than a conventional conditional-variance benchmark. This is consistent with realised-volatility research showing that high-frequency returns provide informative measures of volatility dynamics [@andersen2003realized], and with the HAR framework’s ability to capture heterogeneous volatility persistence across different horizons [@corsi2009har].
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
+from pathlib import Path
 
-HAR-X produced the most balanced improvement among the non-ensemble models. By incorporating liquidity and trading-condition variables, HAR-X reduced RMSPE from 0.539 to 0.449, representing a 16.7% improvement over Base HAR. It also reduced QLike from 0.051 to 0.050, a smaller but directionally consistent 2.0% improvement. Relative to GARCH, HAR-X also performed substantially better across both metrics. These results suggest that order-book microstructure variables, such as spread, volume, and imbalance, contain useful predictive information beyond past volatility alone. In other words, two stocks with similar recent volatility may still have different future volatility if their liquidity conditions differ.
+BASE_DIR = Path.cwd().parent
+EVAL_DIR = BASE_DIR / "outputs" / "evaluation"
 
-The ensemble models strengthened performance in different ways but did not remove the trade-off between point accuracy and risk-sensitive calibration. The Residual Stacker achieved the lowest QLike loss of 0.045, improving on Base HAR by 11.8% and on GARCH by 18.2%. This result is especially relevant for options pricing and risk management, where volatility underestimation can be more costly than overestimation and QLike is commonly used for volatility forecast comparison under imperfect volatility proxies [@patton2011volatility]. However, its RMSPE of 0.560 was weaker than both Base HAR and HAR-X, indicating that its main contribution was improved calibration rather than proportional point-forecast accuracy.
+dm_df = pd.read_csv(EVAL_DIR / "dm_tests_all_models_corrected.csv")
+base = pd.read_csv(EVAL_DIR / "base_predictions.csv")
 
-By contrast, the GNN Hybrid achieved the strongest RMSPE result of 0.381, representing a 29.3% improvement over Base HAR and a 15.1% improvement over HAR-X. This suggests that modelling cross-stock relationships can improve average predictive precision by capturing common volatility movements across stocks. However, the GNN Hybrid also recorded the weakest QLike of 0.072, indicating weaker risk-sensitive calibration despite its superior point accuracy.
+model_names = ["HAR-X", "QLIKE-LGB", "GNN", "GARCH"]
+colors      = ["steelblue", "seagreen", "tomato", "sienna"]
+EPS         = 1e-10
 
-Taken together, the findings answer the research question in a qualified rather than absolute sense. Heterogeneous ensembles can outperform classical benchmarks, but superiority is metric-dependent and therefore application-dependent. If the priority is conservative volatility calibration, the Residual Stacker is preferred. If the priority is proportional point accuracy, the GNN Hybrid is strongest. If interpretability and stable improvement across both metrics are required, HAR-X provides the clearest middle ground.
+required_cols = ["actual_rv"] + [f"pred_{m}" for m in model_names]
+missing = [c for c in required_cols if c not in base.columns]
+if missing:
+    raise ValueError(f"Missing columns in base: {missing}")
 
-Where formal pairwise testing is reported, the Diebold-Mariano test should be used to assess whether the observed differences in forecast loss are statistically meaningful rather than simply numerically different [@diebold_mariano1995]. However, because the current Results material only reports model-level average RMSPE and QLike values and does not provide the fold-level or observation-level loss differentials required for a valid pairwise test, no Diebold-Mariano p-value or confidence statement can be reported here without further output.
+actual = base["actual_rv"].values
+
+def rmspe(y, p):
+    y = np.maximum(y, EPS)
+    p = np.maximum(p, EPS)
+    return np.sqrt(np.mean(((y - p) / y) ** 2))
+
+def qlike(y, p):
+    y = np.maximum(y, EPS)
+    p = np.maximum(p, EPS)
+    return np.mean(y / p - np.log(y / p) - 1)
+
+rmspe_vals = []
+qlike_vals = []
+for m in model_names:
+    pred = base[f"pred_{m}"].values
+    rmspe_vals.append(rmspe(actual, pred))
+    qlike_vals.append(qlike(actual, pred))
+
+def get_star(metric, m1, m2):
+    row = dm_df[
+        (dm_df["metric"] == metric) &
+        (((dm_df["model_1"] == m1) & (dm_df["model_2"] == m2)) |
+         ((dm_df["model_1"] == m2) & (dm_df["model_2"] == m1)))
+    ]
+    if row.empty:
+        return ""
+    return row["sig"].iloc[0]
+
+def bracket_base(values, pad=1.10):
+    return max(values) * pad
+
+def add_bracket(ax, x1, x2, y, text, arm_frac=0.015):
+    arm = y * arm_frac
+    ax.plot(
+        [x1, x1, x2, x2],
+        [y, y + arm, y + arm, y],
+        color="black", lw=1, clip_on=False,
+    )
+    ax.text(
+        (x1 + x2) / 2, y + arm * 1.5,
+        text, ha="center", va="bottom", fontsize=13,
+    )
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+x         = np.arange(len(model_names))
+harx_idx  = model_names.index("HAR-X")
+
+axes[0].bar(x, qlike_vals, color=colors, alpha=0.8)
+axes[0].set_title("QLIKE")
+for i, v in enumerate(qlike_vals):
+    axes[0].text(i, v, f"{v:.4f}", ha="center", va="bottom")
+
+best_q = int(np.argmin(qlike_vals))
+sig_q  = get_star("QLIKE", "HAR-X", model_names[best_q])
+if sig_q:
+    add_bracket(axes[0], harx_idx, best_q, bracket_base(qlike_vals), sig_q)
+
+axes[0].set_xticks(x)
+axes[0].set_xticklabels(model_names)
+axes[0].tick_params(axis="both", labelsize=8)
+axes[0].yaxis.set_major_formatter(mtick.FormatStrFormatter("%.3f"))
+axes[0].set_ylim(0, max(qlike_vals) * 1.22)
+
+axes[1].bar(x, rmspe_vals, color=colors, alpha=0.8)
+axes[1].set_title("RMSPE")
+for i, v in enumerate(rmspe_vals):
+    axes[1].text(i, v, f"{v:.4f}", ha="center", va="bottom")
+
+best_r = int(np.argmin(rmspe_vals))
+sig_r  = get_star("RMSPE", "HAR-X", model_names[best_r])
+if sig_r:
+    add_bracket(axes[1], harx_idx, best_r, bracket_base(rmspe_vals), sig_r)
+
+axes[1].set_xticks(x)
+axes[1].set_xticklabels(model_names)
+axes[1].tick_params(axis="both", labelsize=8)
+axes[1].yaxis.set_major_formatter(mtick.FormatStrFormatter("%.3f"))
+axes[1].set_ylim(0, max(rmspe_vals) * 1.22)
+
+plt.tight_layout()
+fig.subplots_adjust(left=0.12, wspace=0.35)
+plt.show()
+```
+
+The results show that model performance is not uniformly improved by greater complexity. HAR-X remains the most interpretable and balanced reference point because it improves on HAR by adding exogenous liquidity and order-book variables, achieving an RMSPE of 0.5416 and QLike of 0.0511. This suggests that short-horizon volatility is shaped not only by volatility persistence, but also by immediate trading frictions such as spread, volume, and order imbalance.
+
+```{python}
+#| label: fig-forecast-stability
+#| fig-cap: "5-fold forecast stability. The confidence intervals show that the QLIKE-LGB and GNN advantages are stable across folds. Points show fold-level estimates, filled circles show the mean, and horizontal bars span the 95% t-interval. Dashed line marks the HAR-X mean for reference."
+#| echo: false
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
+from scipy import stats
+from pathlib import Path
+import json
+
+BASE_DIR = Path.cwd().parent
+EVAL_DIR = BASE_DIR / "outputs" / "evaluation"
+
+with open(EVAL_DIR / "fold_metrics.json") as f:
+    fold_metrics = json.load(f)
+fold_qlike_metrics = fold_metrics["qlike"]
+fold_rmspe_metrics = fold_metrics["rmspe"]
+
+model_names = ["HAR-X", "QLIKE-LGB", "GNN", "GARCH"]
+colors      = ["steelblue", "seagreen", "tomato", "sienna"]
+
+def compute_ci(fold_values, confidence=0.95):
+    arr  = np.array(fold_values)
+    mean = arr.mean()
+    se   = stats.sem(arr)
+    ci   = stats.t.interval(confidence, df=len(arr) - 1, loc=mean, scale=se)
+    return mean, ci[0], ci[1]
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+
+for ax, (metric_name, fold_data) in zip(axes, [
+    ("QLIKE", fold_qlike_metrics),
+    ("RMSPE", fold_rmspe_metrics),
+]):
+    y_pos = np.arange(len(model_names))
+
+    for i, (name, color) in enumerate(zip(model_names, colors)):
+        mean, lo, hi = compute_ci(fold_data[name])
+        fold_vals    = fold_data[name]
+        ax.plot([lo, hi], [i, i], color=color,
+                linewidth=3, alpha=0.8, solid_capstyle="round", zorder=2)
+        ax.scatter(mean, i, color=color, s=120,
+                   zorder=4, edgecolors="white", linewidth=1.5)
+        ax.scatter(fold_vals, [i] * 5, color=color,
+                   s=30, alpha=0.5, zorder=3, marker="|")
+
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(model_names, fontsize=10)
+    ax.set_xlabel(metric_name, fontsize=11)
+    ax.set_title(metric_name, fontsize=11, fontweight="bold")
+    ax.grid(axis="x", alpha=0.3, zorder=1)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.invert_yaxis()
+
+    harx_mean, _, _ = compute_ci(fold_data["HAR-X"])
+    ax.axvline(harx_mean, color="steelblue", linewidth=1,
+               linestyle="--", alpha=0.5, label=f"HAR-X mean ({harx_mean:.4f})")
+    ax.legend(fontsize=8, framealpha=0.6)
+
+    ax.figure.canvas.draw()
+    x_range = ax.get_xlim()[1] - ax.get_xlim()[0]
+    for i, (name, color) in enumerate(zip(model_names, colors)):
+        mean, lo, hi = compute_ci(fold_data[name])
+        ax.text(hi + x_range * 0.02, i, f"{mean:.4f}",
+                va="center", ha="left", fontsize=8.5,
+                color=color, fontweight="bold")
+    ax.set_xlim(right=ax.get_xlim()[1] + x_range * 0.12)
+
+handles = [
+    mlines.Line2D([0], [0], color=c, linewidth=3,
+                  marker="o", markersize=8,
+                  markerfacecolor=c, markeredgecolor="white",
+                  label=n)
+    for c, n in zip(colors, model_names)
+]
+handles.append(
+    mlines.Line2D([0], [0], color="grey", linewidth=0,
+                  marker="|", markersize=10, label="Fold estimates")
+)
+fig.legend(handles=handles, loc="lower center", ncol=5,
+           fontsize=9, framealpha=0.7, bbox_to_anchor=(0.5, -0.08))
+
+plt.tight_layout()
+fig.subplots_adjust(bottom=0.18)
+plt.show()
+```
+
+The ensemble results should be interpreted through the evaluation strategy. As discussed earlier, RMSPE measures proportional point error symmetrically, while QLike penalises volatility underprediction much more severely and is relatively more tolerant of overprediction. This explains why QLIKE-LGB achieves the lowest QLike at 0.0450 in the model comparison chart. The confidence-interval chart further shows that this QLike advantage is stable across the 5-fold cross-validation, while the Diebold-Mariano tests confirm that the improvement is statistically significant against HAR-X, GNN, and GARCH. Since QLIKE-LGB is trained using a QLike-optimised residual correction, it learns to avoid underestimating volatility, making it better suited to risk-sensitive options pricing. However, its weaker RMSPE shows that conservative calibration does not necessarily produce the closest proportional forecasts. 
+
+By contrast, the GNN achieves the lowest RMSPE of 0.4121 in the performance chart, and the confidence-interval chart shows this advantage is also consistent across folds. This supports the predictive value of cross-stock volatility spillovers. Although the Diebold-Mariano tests also favour GNN under RMSPE, the comparison against GARCH should be interpreted cautiously because GARCH shows much wider fold-level variation. More importantly, the GNN’s weakest QLike of 0.0725 shows that closer average point forecasts can still be poorly calibrated when errors lean toward underprediction.
+
+Overall, the results indicate a clear trade-off between point accuracy and risk-sensitive calibration: the GNN is most effective for minimising proportional forecast error, while the Residual Stacker is better suited to conservative volatility estimation, and HAR-X remains the most balanced and interpretable baseline.
 
 #### Product
 
-**(ADD IMAGE OF DASH APP)**
+**(ADD IMAGE OF DASH APP maybe in appendix?)**
 
-To make the results actionable, we built an interactive volatility monitoring dashboard using Plotly Dash, illustrated in **Figure ?**. The dashboard is organised across three tabs.
+While the research question focuses on whether heterogeneous ensembles outperform classical volatility forecasting benchmarks, practitioners also need to understand when those improvements occur and whether they are robust across different stocks and market conditions. To make the results visualisable to the user, an interactive volatility monitoring dashboard was built using Plotly Dash, as illustrated in **Figure ?**. 
 
-The default RV Buckets tab shows the lagged realised volatility trajectory for any selected stock alongside model predictions, and a regime-stratified leaderboard comparing all five models on QLIKE loss.
-
-The Monitor tab takes a portfolio-wide view, presenting a heatmap of all 112 stocks colour-coded by predicted volatility with supporting scatter plots, residual distributions, and an exportable risk table.
-
-The Leaderboard tab benchmarks models globally across five metrics, with filtering by regime, stock, and time. Together, the dashboard lets practitioners quickly identify which model holds up best for a given instrument and market condition.
+The Dash App helps explore the research question by allowing the user to compare the benchmark models (GARCH and HAR-X) to the ensemble models (GNN and Residual Stacker). By visualising the actual realised volatility alongside the model predictions, the dashboard highlights situations where ensemble methods provide superior forecasts compared to the benchmarks, revealing patterns to users that aggregate metrics alone cannot capture. This enables practitioners to interpret the models’ relative strengths and apply the most appropriate forecasting approach depending on the trading environment and risk priorities.
 
 ## Discussion
 
-Several limitations are worth noting. The results are numerical rankings without formal significance testing, so small gaps between models should be read carefully. GARCH was also fitted on only 480 seconds of returns per window, which likely put it at a disadvantage and may partly explain its weaker performance. The dataset also contains gaps and missing time IDs, meaning some trading windows are absent entirely. This breaks any assumption of continuity and could affect models that implicitly rely on consecutive observations, particularly the GNN which aggregates information across stocks. Relatedly, the time IDs themselves are non-sequential, so the ordering of windows cannot be treated as a clean time series. This limits the ability to model genuine intraday trends or carry information across windows in a principled way. Beyond that, the analysis covers a single dataset of 112 stocks at one forecast horizon, so it is unclear how well the findings carry over to other instruments, market conditions, or longer horizons. The GNN Hybrid also requires significant computation and is harder to interpret, which is a practical concern in fast-moving trading environments.
-
-Future work could address several of these gaps. Fitting GARCH over a longer window would make it a fairer benchmark. There is also a natural next step in combining the two ensembles, using the GNN's cross-stock signal for accuracy while applying the Residual Stacker's correction for calibration. Testing across more stocks, horizons, and market regimes would also strengthen confidence in the results.
+Several limitations are worth noting. GARCH was also fitted on only 480 seconds of returns per window, which likely put it at a disadvantage and may partly explain its weaker performance. Next, the time IDs themselves are non-sequential, so the ordering of windows cannot be treated as a clean time series. This limits the ability to model genuine intraday trends or carry information across windows in a principled way. Beyond that, the analysis covers a single dataset of 112 stocks at one forecast horizon, so it is unclear how well the findings carry over to other market conditions, or longer horizons. The GNN Hybrid also requires significant computation and is harder to interpret, which is a practical concern in fast-moving trading environments.
 
 ## Conclusion
 
-To conclude, classical HAR benchmarks can be meaningfully improved through ensemble methods, but the best choice depends on the application. Where conservative calibration matters most, the Residual Stacker is preferred. Where point accuracy is the priority, the GNN Hybrid leads. Where interpretability and consistent improvement across both metrics are needed, HAR-X is the clearest option. For an industry partner, the practical takeaway is not one single best model, but a set of options matched to the cost structure of the problem at hand.
+To conclude, the findings provide strong evidence that heterogeneous ensemble methods can outperform classical benchmarks for short-term volatility forecasting using high-frequency order book data. The Residual Stacker reduces QLike by 11.8% over Base HAR and the GNN Hybrid reduces RMSPE by 29.3%, both statistically significant. High-frequency order book data contains predictive structure beyond what classical HAR captures, and ensemble methods are effective at extracting it. 
+
+Future work could address several remaining gaps. Fitting GARCH over a longer window would make it a fairer benchmark. There is also a natural next step in combining the two ensembles, using the GNN's cross-stock signal for accuracy while applying the Residual Stacker's correction for calibration. Testing across more stocks, horizons, and market would also strengthen confidence in the results.
 
 ## Student Contributions
 
