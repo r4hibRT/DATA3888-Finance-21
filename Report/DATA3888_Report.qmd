@@ -28,64 +28,33 @@ execute:
 
 ## Executive Summary
 
-**Background:** Volatility forecasting sits at the core of options pricing and risk management. The Black-Scholes model, the foundation of modern derivatives pricing, requires a reliable estimate of future volatility that historical averages alone cannot reliably provide. Using high-frequency limit order book data provided by Optiver, we investigate whether a heterogeneous ensemble of forecasting models can systematically outperform classical benchmarks for 2-minute-ahead realised volatility prediction 
+This report investigates whether a heterogeneous ensemble of forecasting models can systematically outperform classical benchmarks for 2-minute-ahead realised volatility prediction. To do so, we evaluate four models: The GARCH family as a classical benchmark, HAR-X as an augmented industry baseline, and two ensemble approaches: a Residual Stacker with QLike-optimised correction and a Graph Neural Network (GNN) with a learned HAR blend. These models are assessed on RMSPE and QLike loss metrics, which together capture both point accuracy and the asymmetric cost of forecast errors relevant to options pricing. 
 
-**Methodology:** To do so, we evaluate four models: The GARCH family as a classical benchmark, HAR-X as an augmented industry baseline, and two ensemble approaches: a Residual Stacker with QLike-optimised correction and a Graph Neural Network (GNN) with a learned HAR blend. These models are assessed on RMSPE and QLike loss metrics, which together capture both point accuracy and the asymmetric cost of forecast errors relevant to options pricing. 
-
-**Findings:** The results demonstrate that ensemble methods improve upon classical benchmarks, though the nature of improvement depends on the objective: the Residual Stacker achieves the lowest QLike (0.045), outperforming all benchmarks including HAR-X (0.051) and GARCH (0.055), while the GNN Hybrid achieves the lowest RMSPE (0.417), a \~15% reduction over HAR-X(0.445), but at the cost of elevated QLike (0.072). No single ensemble dominates across both metrics.
-
-**Conclusion:** These results suggest that model selection in volatility forecasting cannot be reduced to a single metric and the appropriate ensemble depends on whether the downstream task penalises miscalibration or magnitude error. To support reproducibility and practical evaluation, the analysis is accompanied by an interactive Plotly Dash monitoring tool enabling inspection of model predictions across stocks and per-stock risk decomposition, facilitating translation of forecast methodology into applied risk workflows.  
+The Residual Stacker achieves the lowest QLike score (0.045), outperforming all benchmarks including HAR-X (0.051) and GARCH (0.056), while the GNN Hybrid achieves the lowest RMSPE (0.412), a \~24% reduction over HAR-X(0.542), but at the cost of elevated QLike (0.072). These results suggest that model selection in volatility forecasting cannot be reduced to a single metric and the appropriate ensemble depends on whether the downstream task penalises miscalibration or magnitude error. The analysis is accompanied by an interactive Plotly Dash monitoring tool to enable inspection of model predictions across stocks and evaluate per-stock risk decomposition.  
 
 ## Background
 
 ### History
 
-At the core of options pricing lies a fundamental challenge: the Black-Scholes model requires a forward-looking volatility estimate, yet future volatility remains inherently unobservable. GARCH-family models addressed this by inferring conditional volatility from daily return sequences, establishing the early standard for volatility forecasting [@ghysels2006predicting]. The availability of high-frequency limit order book data, however, made more granular approaches possible.
+Volatility forecasting sits at the core of options pricing and risk management. The Black-Scholes model, the foundation of modern derivatives pricing, requires a forward-looking volatility estimate that historical averages alone cannot reliably provide. GARCH-family models addressed this by inferring conditional volatility from daily return sequences, establishing the early standard for volatility forecasting [@ghysels2006predicting]. The availability of high-frequency limit order book data, however, made more granular approaches possible.
 
-Corsi formalised this with the Heterogeneous Autoregressive model of Realised Volatility (HAR-RV), which regresses future realised volatility on lagged RV at multiple horizons, capturing the heterogeneous time scales at which different market participants operate. [@corsi2009har] Despite its parsimony, HAR-RV has proven consistently difficult to outperform out-of-sample, cementing its status as the de facto industry benchmark. For Optiver, a global electronic market maker pricing and hedging options in real time, it represents the practical baseline against which any proposed improvement must be evaluated.
+Corsi (2009) formalised this with the Heterogeneous Autoregressive model of Realised Volatility (HAR-RV), which regresses future realised volatility on lagged RV at multiple horizons, capturing the heterogeneous time scales at which different market participants operate [@corsi2009har] . Despite its parsimony, HAR-RV has proven consistently difficult to outperform out-of-sample, cementing its status as the de facto industry benchmark. For Optiver, a global electronic market maker pricing and hedging options in real time, it represents the practical baseline against which any proposed improvement must be evaluated.
 
 ### Motivation & Research Question
 
-HAR-RV's limitations are well-documented, yet its out-of-sample robustness has proven remarkably difficult to overcome. Rather than replacing HAR, this study investigates whether heterogeneous ensemble methods can exploit HAR's robustness as a foundation. To do so, the ensemble methods extend it with nonlinear correction and cross-stock structure to capture signals that a linear, stock-independent model cannot. Both ensemble approaches proposed here are architecturally constrained to improve on HAR rather than circumvent it. As such, any measured gain is more plausibly attributable to what the ensemble adds beyond the baseline. This motivates the central research question:
+HAR-RV's limitations are well-documented, yet its out-of-sample robustness has proven remarkably difficult to overcome. Rather than replacing HAR, this study investigates whether heterogeneous ensemble methods can exploit HAR's robustness as a foundation. The enemble models extend upon it with nonlinear correction and cross-stock structure to capture signals that a linear, stock-independent model cannot. Both ensemble approaches proposed here are constrained to improve on HAR rather than circumvent it, as such any measured gain is more plausibly attributable to what the ensemble adds beyond the baseline. This motivates the central research question:
 
 *Can a heterogeneous ensemble of volatility forecasting models systematically outperform individual classical benchmarks for short-term volatility forecasting using high-frequency order book data?*
 
 ### Exploratory Data Analysis
 
-```{python}
-#| label: fig-eda-target-distribution
-#| fig-cap: "Distribution of log-realised volatility across all forecast windows."
-#| echo: false
+The Optiver dataset covers 112 stocks at per-second resolution, with each 10-minute window split into an 8-minute input period and a 2-minute forecast target. The 2-minute target balances statistical reliability, predictive feasibility, and tradability. A shorter target (e.g. 30 seconds) would be dominated by microstructure noise and leave insufficient time for model inference and order execution. A longer target (e.g. 5 minutes) produces a smoother volatility estimate but reduces the actionability of the forecast. At 120 seconds the window contains enough price observations for a meaningful RV estimate while still leaving time for a trader to act.
 
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
+The 112 stocks are highly heterogeneous: mean bid-ask spreads range across three orders of magnitude and mean per-second volume spans from double digits to tens of thousands. A spread of 0.001 carries very different economic meaning depending on the stock's price level, making per-stock model fitting and within-stock z-scoring essential before any pooled modelling.
 
-img = mpimg.imread("../eda_pictures/eda_target_distribution.png")
+The forecast target, log RV over seconds 480–599, has a pooled mean of −6.612 and standard deviation of 0.709 across 343,145 windows. The log transformation yields an approximately Gaussian distribution, supporting OLS fitting in log-space. Roughly 0.1% of windows fall below a noise floor at $log(10⁻⁴) = −9.21$, too few to distort training. Note that `time_id` values are anonymous window identifiers rather than a sequential time index, so lagged relationships across windows cannot be constructed from `time_id` alone.
 
-fig, ax = plt.subplots(figsize=(8, 5))
-ax.imshow(img)
-ax.axis("off")
-
-plt.show()
-```
-
-The Optiver dataset covers 112 stocks at per-second resolution, with the study splitting each 10-minute window into an 8-minute input period and a 2-minute forecast target.
-
-**Finding 1: Cross-stock heterogeneity is extreme.** Per-stock summary statistics show that mean bid-ask spreads range across three orders of magnitude and mean per-second volume ranges from double digits to tens of thousands. A spread of 0.001 on a stock with WAP near 1.0 is economically very different from the same spread on a stock trading at a different price level. This makes per-stock model fitting and within-stock z-scoring of features essential before any pooled or cross-stock modelling.
-
-**Finding 2: Log-RV is approximately Gaussian with stock-level shifts.** The forecast target, $log⁡RV$ computed over seconds 480–599, has a pooled mean of –6.612 and standard deviation of 0.709 across 343,145 windows. Only 7 windows (0.002%) have exactly zero price movement, and roughly 0.1% of windows fall below the noise floor of $log(10^{-4}) = -9.21$. The near-Gaussian shape after log transformation supports OLS fitting in log-space (as HAR and HAR-X do) and means the noise floor affects a negligible fraction of observations.
-
-**Finding 3: Volatility co-moves strongly across stocks, but contemporaneously rather than predictively.** Four cross-stock tests were run on the $112 \times 3064$ panel of $logRV$
-
--   Pairwise Pearson correlation across all 6,216 stock pairs yields a mean of 0.672 with 100% of pairs positive and 97% above 0.5, an unusually strong level of co-movement.
-
--   Permutation testing (100 shuffles of stock labels within each `time_id`) confirms this is genuine structure: the real mean correlation (0.672) exceeds the null mean (0.519) with a z-score of 7,230 $(p \approx 0 )$.
-
--   Granger causality (lag = 3, 200 randomly sampled directed pairs), however, finds only 0.5% of pairs significant at $\alpha = 0.05$, which is \*below\* the 5% expected by chance. A binomial test yields $p=1.0$, confirming no excess predictive causality.
-
--   Lead-lag correlation reinforces this: same-time correlation is strong (mean = 0.670), but lagged correlation is effectively zero (mean = –0.012, no pairs above \|0.1\|).
-
-These findings motivate models that can capture both cross-sectional structure and nonlinear microstructure effects.
+Volatility co-moves strongly across stocks, but contemporaneously rather than predictively. Pairwise log RV correlations average 0.672, with 97% of pairs above 0.5; however, Granger causality and lead-lag tests find no cross-stock predictive structure at any lag (details in Appendix X). A graph neural network can therefore exploit same-time co-movement to share information across stocks within a window, but lagged cross-stock features would add noise rather than signal.
 
 ## Methodology
 
@@ -115,11 +84,11 @@ $$
 \text{RV} = \sqrt{\sum r_t^2}
 $$
 
-over seconds 480–599, with the model trained to predict $logRV$, floored at $10⁻⁴$. Five-fold cross-validation is constructed using GroupShuffleSplit on `time_id` (80/20 split).
+over seconds 480–599, with the model trained to predict $logRV$, floored at $10⁻⁴$. Five-fold cross-validation is constructed using GroupShuffleSplit on `time_id` (80/20 split) since `time_id` is non-sequential and arbitrary. As such, grouping by `stock_id` ensures the split tests generalisation rather than temporal extrapolation.
 
 ### Evaluation Strategy
 
-All models are evaluated under 5-fold cross-validation with GroupKFold on stock_id, where each fold holds out a distinct subset of stocks completely unseen during training since `time_id` is non-sequential and arbitrary, grouping by stock_id ensures the split tests cross-stock generalization rather than temporal extrapolation. Out-of-fold predictions are concatenated across all five folds to produce a single set of predictions covering the entire dataset, on which RMSPE and QLike are computed. Pairwise Diebold–Mariano tests with Newey-West HAC variance estimation (lag truncation $h = n^{1/3}$) are conducted on these out-of-fold residuals across all model combinations under both metrics. Benjamini–Hochberg FDR correction is applied to the resulting 12 simultaneous tests, preferred over Bonferroni given the shared data and fold structure, keeping only the significant results after correction.
+All models are evaluated under 5-fold cross-validation with GroupKFold on stock_id. Out-of-fold predictions are concatenated across all five folds to produce a single set of predictions covering the entire dataset, on which RMSPE and QLike are computed. **Pairwise Diebold–Mariano** tests with **Newey-West HAC** variance estimation are conducted on these out-of-fold residuals across all model combinations under both metrics. The Newey-West HAC variance estimator with lag truncation $h = n^{1/3}$ is used to account for serial correlation in forecast errors, which is expected given the persistence of realised volatility across consecutive trading windows. **Benjamini-Hochberg** **FDR correction** is applied to the resulting 12 simultaneous tests, preferred over Bonferroni given the shared data and fold structure, keeping only the significant results after correction. 
 
 ```{python}
 #| label: fig-rmpse-vs-qlike
@@ -196,9 +165,7 @@ ax.grid(alpha=0.15)
 plt.show()
 ```
 
-Two metrics are used in combination, as neither alone is sufficient.
-
-As seen in @fig-rmpse-vs-qlike\\, RMSPE, defined as $\sqrt{\frac{1}{n}\sum_{i=1}^{n}\left(\frac{y_i-\hat{y}_i}{y_i}\right)^2}$ , measures proportional prediction error symmetrically. QLike, defined as $\frac{\sigma}{\hat{\sigma}} - \log\left(\frac{\sigma}{\hat{\sigma}}\right) - 1$ , penalises under-prediction more heavily, reflecting the asymmetric cost of underestimating risk in options pricing. [@patton2011volatility]. Although a low QLike can be achieved by a model that systematically overpredicts, due to the fact the loss function is lenient toward overestimation; it does not, on its own, indicate forecast accuracy. RMSPE is therefore needed to confirm that predictions are close to realised values, while QLike ensures that residual errors lean toward the conservative side. The preferred model is one that achieves both low RMSPE and low QLike. 
+Two metrics are used in combination, as neither alone is sufficient. As seen in @fig-rmpse-vs-qlike, RMSPE, defined as $\sqrt{\frac{1}{n}\sum_{i=1}^{n}\left(\frac{y_i-\hat{y}_i}{y_i}\right)^2}$ , measures proportional prediction error symmetrically. QLike, defined as $\frac{\sigma}{\hat{\sigma}} - \log\left(\frac{\sigma}{\hat{\sigma}}\right) - 1$ , penalises under-prediction more heavily, reflecting the asymmetric cost of underestimating risk in options pricing. [@patton2011volatility]. Although a low QLike can be achieved by a model that systematically overpredicts, due to the fact the loss function is lenient toward overestimation; it does not, on its own, indicate forecast accuracy. RMSPE is therefore needed to confirm that predictions are close to realised values, while QLike ensures that residual errors lean toward the conservative side. The preferred model is one that achieves both low RMSPE and low QLike. 
 
 ### Benchmark Models
 
@@ -462,7 +429,24 @@ Overall, the results indicate a clear trade-off between point accuracy and risk-
 
 #### Product
 
-While the research question focuses on whether heterogeneous ensembles outperform classical volatility forecasting benchmarks, practitioners also need to understand when those improvements occur and whether they are robust across different stocks and market conditions. To make the results visualisable to the user, an interactive volatility monitoring dashboard was built using Plotly Dash, as illustrated in @fig-dash-app in the appendix. 
+```{python}
+#| label: fig-dash-app
+#| fig-cap: "DashApp landing page showing model predictions across stocks."
+#| echo: false
+
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
+img = mpimg.imread("../DashApp/dashapp.png")
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.imshow(img)
+ax.axis("off")
+plt.tight_layout()
+plt.show()
+
+```
+
+While the research question focuses on whether heterogeneous ensembles outperform classical volatility forecasting benchmarks, practitioners also need to understand when those improvements occur and whether they are robust across different stocks and market conditions. To make the results visualisable to the user, an interactive volatility monitoring dashboard was built using Plotly Dash, as illustrated in @fig-dash-app, with more windows shown in the appendix. 
 
 The Dash App helps explore the research question by allowing the user to compare the benchmark models (GARCH and HAR-X) to the ensemble models (GNN and Residual Stacker). By visualising the actual realised volatility alongside the model predictions, the dashboard highlights situations where ensemble methods provide superior forecasts compared to the benchmarks, revealing patterns to users that aggregate metrics alone cannot capture. This enables practitioners to interpret the models’ relative strengths and apply the most appropriate forecasting approach depending on the trading environment and risk priorities.
 
@@ -480,19 +464,233 @@ Future work could address several remaining gaps. Fitting GARCH over a longer wi
 
 ## Appendix {.appendix}
 
+##### Appendix A: Feature Definitions
+
 ```{python}
-#| label: fig-dash-app
-#| fig-cap: "Volatility Regime Monitor dashboard showing model predictions across stocks."
+#| label: fig-var
+#| fig-cap: "Feature engineering variables used in the analysis."
+#| fig-width: 8
+#| fig-height: 5
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import textwrap
+
+features = [
+    "wap",
+    "bid_ask_spread",
+    "total_volume",
+    "price_spread",
+    "depth_imbalance",
+    "log_ret"
+]
+
+definitions = [
+    "Weighted average price using best bid/ask and opposite-side size weights",
+    "Relative spread between lowest ask and highest bid",
+    "Total displayed volume across top two bid and ask levels",
+    "Full price range across the top two bid and ask quotes",
+    "Relative imbalance between bid-side and ask-side depth",
+    "Log return of weighted average price"
+]
+
+formulas = [
+    "(bid_price1 × ask_size1 + ask_price1 × bid_size1)\n/ (bid_size1 + ask_size1)",
+    "ask_price1 - bid_price1",
+    "bid_size1 + bid_size2 + ask_size1 + ask_size2",
+    "max(price) - min(price)",
+    "((bid_size1 + bid_size2)\n- (ask_size1 + ask_size2))\n/ ((bid_size1 + bid_size2)\n+ (ask_size1 + ask_size2))",
+    "log(wap_t / wap_(t-1))"
+]
+
+wrapped_definitions = [
+    "\n".join(textwrap.wrap(text, width=35))
+    for text in definitions
+]
+
+df = pd.DataFrame({
+    "Feature": features,
+    "Definition": wrapped_definitions,
+    "Formula": formulas
+})
+
+fig, ax = plt.subplots(figsize=(14, 6))
+ax.axis('off')
+
+table = ax.table(
+    cellText=df.values,
+    colLabels=df.columns,
+    cellLoc='left',
+    colWidths=[0.15, 0.40, 0.45],  # feature, definition, formula
+    loc='center'
+)
+
+table.auto_set_font_size(False)
+table.set_fontsize(9)
+table.scale(1, 3.2)
+
+for (row, col), cell in table.get_celld().items():
+    cell.set_edgecolor('black')
+
+    if row == 0:
+        cell.set_text_props(weight='bold')
+        cell.set_facecolor('#D9EAF7')
+        cell.set_height(0.10)
+    else:
+        cell.set_height(0.14)
+
+plt.tight_layout()
+plt.show()
+
+```
+
+##### Appendix B: EDA
+
+```{python}
+#| label: fig-stock_interaction
+#| fig-cap: "Stock Interaction Summary"
 #| echo: false
 
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
-img = mpimg.imread("../DashApp/dashapp.png")
+img = mpimg.imread("../EDA_pictures/stock interaction.png")
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.imshow(img)
 ax.axis("off")
 plt.tight_layout()
 plt.show()
 
+```
+
+```{python}
+#| label: fig-eda-target-distribution
+#| fig-cap: "Distribution of log-realised volatility across all forecast windows."
+#| echo: false
+
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
+img = mpimg.imread("../eda_pictures/eda_target_distribution.png")
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.imshow(img)
+ax.axis("off")
+
+plt.show()
+```
+
+##### Appendix C: DashApp
+
+```{python}
+#| label: fig-heatmap
+#| fig-cap: "Regime Heatmap tab of the DashApp"
+#| echo: false
+
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
+img = mpimg.imread("../DashApp/regime_heatmap.png")
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.imshow(img)
+ax.axis("off")
+plt.tight_layout()
+plt.show()
+
+```
+
+```{python}
+#| label: fig-ranking
+#| fig-cap: "Model Ranking tab of the DashApp"
+#| echo: false
+
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
+img = mpimg.imread("../DashApp/model_ranking.png")
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.imshow(img)
+ax.axis("off")
+plt.tight_layout()
+plt.show()
+
+```
+
+##### Appendix D: Terminology
+
+```{python}
+#| label: fig-term
+#| fig-cap: "Key terminology used throughout the project."
+#| fig-width: 8
+#| fig-height: 5
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import textwrap
+
+terms = [
+    "Pairwise correlations",
+    "Granger causality",
+    "Lead-lag correlation",
+    "Pairwise Diebold-Mariano",
+    "Newey-West HAC",
+    "Benjamini-Hochberg FDR correction",
+    "GBDT",
+    "Mutual information filtering",
+    "Mamba",
+    "GATv2",
+    "Sigmoid-gated scalar"
+]
+
+descriptions = [
+    "Measures the strength and direction of linear association between two variables, usually using Pearson correlation. In this project, it helps identify which stocks or features tend to move together.",
+    "A time-series test of whether past values of one variable improve prediction of another variable beyond its own history. It does not prove true causation, only predictive precedence.",
+    "Examines whether movements in one series tend to occur before movements in another. Useful for detecting delayed market reactions or information spillover across stocks.",
+    "A statistical test comparing the forecast accuracy of two models. Applied across model pairs to check if performance differences are significant.",
+    "Corrects standard errors in regression when data has autocorrelation or unequal variance. Ensures statistical tests remain valid for time series data.",
+    "Adjusts for false positives when running many statistical tests at once. Less strict than Bonferroni, making it practical for large-scale testing.",
+    "Gradient Boosted Decision Trees — an ensemble method that builds trees sequentially, each fixing the errors of the last. Strong performer on tabular data.",
+    "Selects features based on how much information they share with the target variable, including non-linear relationships. Removes low-value features to reduce noise.",
+    "A sequence model architecture that processes long sequences efficiently in linear time. An alternative to Transformers for capturing temporal patterns.",
+    "A graph neural network that uses learnable attention weights to focus on the most relevant neighbouring nodes. Models relational structure between entities.",
+    "A learnable value squashed between 0 and 1 via a sigmoid function. Acts as a soft on/off switch to control a component's contribution in the model."
+]
+
+# Wider wrapping to utilize the full description column
+wrapped_desc = [
+    "\n".join(textwrap.wrap(desc, width=100))
+    for desc in descriptions
+]
+
+df = pd.DataFrame({
+    "Terminology": terms,
+    "Description": wrapped_desc
+})
+
+fig, ax = plt.subplots(figsize=(16, 8))
+ax.axis('off')
+
+table = ax.table(
+    cellText=df.values,
+    colLabels=df.columns,
+    cellLoc='left',
+    colWidths=[0.22, 0.78],  # wider description column
+    loc='center'
+)
+
+table.auto_set_font_size(False)
+table.set_fontsize(10)
+
+for (row, col), cell in table.get_celld().items():
+    cell.set_edgecolor('black')
+
+    if row == 0:
+        cell.set_facecolor('#D9EAF7')
+        cell.set_text_props(weight='bold')
+        cell.set_height(0.06)
+    else:
+        cell.set_height(0.085)
+
+plt.tight_layout()
+plt.show()
 ```
