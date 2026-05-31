@@ -329,7 +329,7 @@ fig.subplots_adjust(left=0.12, wspace=0.35)
 plt.show()
 ```
 
-The results as seen above in @fig-model-comparison show that model performance is not uniformly improved by greater complexity. HAR-X remains the most interpretable and balanced reference point because it improves on HAR by adding exogenous liquidity and order-book variables, achieving an RMSPE of 0.5416 and QLike of 0.0511. This suggests that short-horizon volatility is shaped not only by volatility persistence, but also by immediate trading frictions such as spread, volume, and order imbalance.
+The results, as seen above in @fig-model-comparison show that model performance is not uniformly improved by greater complexity. HAR-X remains an interpretable and balanced reference point with the addition of exogenous liquidity and order-book variables, achieving an RMSPE of 0.5416 and QLike of 0.0511. This suggests that short-horizon volatility is shaped not only by volatility persistence, but also by immediate trading frictions such as spread, volume, and order imbalance.
 
 ```{python}
 #| label: fig-forecast-stability
@@ -421,11 +421,9 @@ fig.subplots_adjust(bottom=0.18)
 plt.show()
 ```
 
-The ensemble results should be interpreted through the evaluation strategy. As discussed earlier, RMSPE measures proportional point error symmetrically, while QLike penalises volatility underprediction much more severely and is relatively more tolerant of overprediction. This explains why QLIKE-LGB achieves the lowest QLike at 0.0450 in the model comparison chart. @fig-forecast-stability further shows that this QLike advantage is stable across the 5-fold cross-validation, while the Diebold-Mariano tests confirm that the improvement is statistically significant against HAR-X, GNN, and GARCH. Since QLIKE-LGB is trained using a QLike-optimised residual correction, it learns to avoid underestimating volatility, making it better suited to risk-sensitive options pricing. However, its weaker RMSPE shows that conservative calibration does not necessarily produce the closest proportional for
+From @fig-model-comparison, the residual stacker, labelled as QLIKE-LGB, achieves the lowest QLike at 0.0450 in the model comparison. @fig-forecast-stability strengthens this result by showing that its QLike advantage is statistically significant after Benjamini-Hochberg correction against HAR-X, GNN, and GARCH. This means the improvement is not only numerically better, but also statistically supported in the pairwise forecast comparison. Since QLIKE-LGB is trained using a QLike-optimised residual correction, it is better aligned with avoiding poorly calibrated volatility forecasts, making it more suitable for risk-sensitive options pricing and risk management. Its RMSPE of 0.5501 also remains close to HAR-X’s 0.5416, suggesting only a limited sacrifice in point accuracy.
 
-By contrast, the GNN achieves the lowest RMSPE of 0.4121 in the performance chart, and the confidence-interval chart shows this advantage is also consistent across folds. This supports the predictive value of cross-stock volatility spillovers. Although the Diebold-Mariano tests also favour GNN under RMSPE, the comparison against GARCH should be interpreted cautiously because GARCH shows much wider fold-level variation. More importantly, the GNN’s weakest QLike of 0.0725 shows that closer average point forecasts can still be poorly calibrated when errors lean toward underprediction.
-
-Overall, the results indicate a clear trade-off between point accuracy and risk-sensitive calibration: the GNN is most effective for minimising proportional forecast error, while the Residual Stacker is better suited to conservative volatility estimation, and HAR-X remains the most balanced and interpretable baseline.
+By contrast, the GNN achieves the lowest RMSPE of 0.4121 in Figure 1. The Diebold-Mariano results in Figure 2 also favour GNN under RMSPE against HAR-X, QLIKE-LGB, and GARCH, confirming that its point-forecast advantage is statistically meaningful. This supports the predictive value of modelling cross-stock volatility spillovers. However, the GNN records the weakest QLike of 0.0725, and the QLike-based Diebold-Mariano comparisons favour HAR-X, QLIKE-LGB, and even GARCH over GNN. This shows that closer average point forecasts can still be poorly calibrated under a risk-sensitive loss. Therefore, no model dominates: GNN is best for point accuracy, QLIKE-LGB for conservative calibration, and HAR-X remains the most interpretable balanced benchmark despite slightly weaker headline metrics.
 
 #### Product
 
@@ -452,13 +450,17 @@ The Dash App helps explore the research question by allowing the user to compare
 
 ## Discussion
 
-Several limitations are worth noting. GARCH was also fitted on only 480 seconds of returns per window, which likely put it at a disadvantage and may partly explain its weaker performance. Next, the time IDs themselves are non-sequential, so the ordering of windows cannot be treated as a clean time series. This limits the ability to model genuine intraday trends or carry information across windows in a principled way. Beyond that, the analysis covers a single dataset of 112 stocks at one forecast horizon, so it is unclear how well the findings carry over to other market conditions, or longer horizons. The GNN Hybrid also requires significant computation and is harder to interpret, which is a practical concern in fast-moving trading environments.
+### Limitation
+
+Several limitations are worth noting. First, the time IDs themselves are non-sequential, so the ordering of windows cannot be treated as a clean time series. This limits the ability to model genuine intraday trends or carry information across windows in a principled way. Beyond that, the analysis covers a single dataset of 112 stocks at one forecast horizon, so it is unclear how well the findings carry over to other market conditions, or longer horizons. The anonymity of the stocks also prevents any sector or market-based analysis, meaning the model's structure cannot be validated against known economic relationships between real-world market sectors. Ensemble models are harder to interpret and difficult to explain, which is a practical concern in fast-moving trading environments. 	
+
+### Future Work
+
+Several directions emerge naturally from this study's findings and limitations. The metric-dependent trade-off between the Residual Stacker and GNN suggests that a unified model jointly optimising RMSPE and QLike rather than treating them as separate objectives could yield more balanced forecasts. The current analysis is confined to a single dataset at a fixed 2-minute horizon across anonymised stocks. Evaluating performance across multiple forecast horizons and real-world named securities would establish whether the ensemble advantage is horizon-specific and whether it holds across identifiable sector groupings. The non-sequential nature of `time_id` also prevents genuine temporal modelling across windows. Future work could explore whether a dataset with true temporal ordering enables richer sequential architectures.
 
 ## Conclusion
 
-To conclude, the findings provide strong evidence that heterogeneous ensemble methods can outperform classical benchmarks for short-term volatility forecasting using high-frequency order book data. The Residual Stacker reduces QLike by 11.8% over Base HAR and the GNN Hybrid reduces RMSPE by 29.3%, both statistically significant. High-frequency order book data contains predictive structure beyond what classical HAR captures, and ensemble methods are effective at extracting it. 
-
-Future work could address several remaining gaps. Fitting GARCH over a longer window would make it a fairer benchmark. There is also a natural next step in combining the two ensembles, using the GNN's cross-stock signal for accuracy while applying the Residual Stacker's correction for calibration. Testing across more stocks, horizons, and market would also strengthen confidence in the results.
+To conclude, the findings provide strong evidence that heterogeneous ensemble methods can outperform classical benchmarks for short-term volatility forecasting using high-frequency order book data. The Residual Stacker reduces QLike by 11.9% over Base HAR and the GNN Hybrid reduces RMSPE by 23.9%, both statistically significant. High-frequency order book data contains predictive structure beyond what classical HAR captures, and ensemble methods are effective at extracting it.
 
 ## Student Contributions
 
