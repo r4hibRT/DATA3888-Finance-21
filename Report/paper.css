@@ -14,16 +14,16 @@
          - paper.css
    ===================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap");
 
 /* ---------- 0. Font stacks ------------------------------------------- */
 :root {
   --paper-serif: "Source Serif 4", "Source Serif Pro", Charter,
-                 "Bitstream Charter", Cambria, Georgia, "Times New Roman", serif;
-  --paper-sans:  ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica,
-                 Arial, sans-serif;
-  --paper-mono:  "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace,
-                 Menlo, Consolas, monospace;
+    "Bitstream Charter", Cambria, Georgia, "Times New Roman", serif;
+  --paper-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  --paper-mono: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo,
+    Consolas, monospace;
 }
 
 /* ---------- 1. Base typography --------------------------------------- */
@@ -58,6 +58,7 @@ main .katex-display,
 main .math.display {
   hyphens: manual;
 }
+
 main figcaption,
 main pre,
 main table {
@@ -65,7 +66,12 @@ main table {
 }
 
 /* ---------- 2. Headings ---------------------------------------------- */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: var(--paper-serif);
   font-weight: 700;
   line-height: 1.25;
@@ -81,10 +87,34 @@ h2 {
   padding-bottom: 0.3rem;
   border-bottom: 1px solid var(--bs-border-color, #dee2e6);
 }
-h3 { font-size: 1.28rem; margin-top: 1.9rem; margin-bottom: 0.55rem; }
-h4 { font-size: 1.10rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; }
-h5 { font-size: 1.00rem; font-weight: 700; margin-top: 1.3rem; margin-bottom: 0.4rem; letter-spacing: 0.01em; }
-h6 { font-size: 0.90rem; font-weight: 700; margin-top: 1.2rem; margin-bottom: 0.4rem; }
+
+h3 {
+  font-size: 1.28rem;
+  margin-top: 1.9rem;
+  margin-bottom: 0.55rem;
+}
+
+h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+h5 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-top: 1.3rem;
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.01em;
+}
+
+h6 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-top: 1.2rem;
+  margin-bottom: 0.4rem;
+}
 
 /* Subordinate, muted section numbers */
 .header-section-number {
@@ -100,6 +130,7 @@ h6 { font-size: 0.90rem; font-weight: 700; margin-top: 1.2rem; margin-bottom: 0.
   padding-bottom: 1.25rem;
   margin-bottom: 2.5rem;
 }
+
 .quarto-title .title {
   font-size: 2.4rem;
   font-weight: 700;
@@ -107,19 +138,22 @@ h6 { font-size: 0.90rem; font-weight: 700; margin-top: 1.2rem; margin-bottom: 0.
   letter-spacing: -0.015em;
   margin-bottom: 0.5rem;
 }
+
 .quarto-title-meta,
 .quarto-title-authors,
 .quarto-title-author {
   font-size: 0.95rem;
   color: var(--bs-secondary-color, #6c757d);
 }
+
 .quarto-title-meta-heading {
   font-family: var(--paper-sans);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 0.70rem;
+  font-size: 0.7rem;
   font-weight: 700;
 }
+
 .quarto-title-author-name {
   font-weight: 600;
   color: var(--bs-body-color);
@@ -132,12 +166,14 @@ figure.quarto-float {
   margin-top: 1.9rem;
   margin-bottom: 1.9rem;
 }
+
 main figure img {
   display: block;
   margin-inline: auto;
   max-width: 100%;
   height: auto;
 }
+
 figcaption,
 .figure-caption,
 .quarto-float-caption,
@@ -151,6 +187,7 @@ caption {
   margin-top: 0.7rem;
   font-style: normal;
 }
+
 /* The "Figure N:" label carries the emphasis */
 .quarto-float-caption .quarto-float-caption-figure,
 .quarto-float-caption strong,
@@ -166,8 +203,14 @@ main table {
   margin: 1.6rem auto;
   font-feature-settings: "lnum" 1, "tnum" 1;
 }
-main th { font-weight: 700; }
-main caption { caption-side: top; }
+
+main th {
+  font-weight: 700;
+}
+
+main caption {
+  caption-side: top;
+}
 
 /* ---------- 6. Math -------------------------------------------------- */
 .katex-display,
@@ -179,21 +222,26 @@ main caption { caption-side: top; }
 }
 
 /* ---------- 7. Code -------------------------------------------------- */
-pre, code, kbd, samp {
+pre,
+code,
+kbd,
+samp {
   font-family: var(--paper-mono);
   font-size: 0.83rem;
   font-feature-settings: normal;
 }
+
 div.sourceCode {
   border: 1px solid var(--bs-border-color, #dee2e6);
   border-radius: 6px;
 }
+
 /* Quieter, more paper-like code-fold toggle */
 details.code-fold > summary,
 .code-fold > summary,
 summary.code-fold-summary {
   font-family: var(--paper-sans);
-  font-size: 0.80rem;
+  font-size: 0.8rem;
   color: var(--bs-secondary-color, #6c757d);
 }
 
@@ -202,11 +250,13 @@ main a {
   text-decoration-thickness: 0.06em;
   text-underline-offset: 0.15em;
 }
+
 a.quarto-xref,
 .citation a,
 a[role="doc-biblioref"] {
   text-decoration: none;
 }
+
 a.quarto-xref:hover,
 .citation a:hover {
   text-decoration: underline;
@@ -218,6 +268,7 @@ nav[role="doc-toc"],
   font-family: var(--paper-sans);
   font-size: 0.84rem;
 }
+
 nav[role="doc-toc"] > h2,
 #toc-title {
   font-family: var(--paper-sans);
@@ -228,6 +279,7 @@ nav[role="doc-toc"] > h2,
   color: var(--bs-secondary-color, #6c757d);
   border-bottom: none;
 }
+
 nav[role="doc-toc"] ul > li > a.active {
   font-weight: 700;
 }
@@ -235,9 +287,10 @@ nav[role="doc-toc"] ul > li > a.active {
 /* ---------- 10. References ------------------------------------------- */
 #refs,
 div.csl-bib-body {
-  font-size: 0.90rem;
+  font-size: 0.9rem;
   line-height: 1.5;
 }
+
 div.csl-entry {
   margin-bottom: 0.55rem;
 }
@@ -257,20 +310,253 @@ main blockquote {
     font-size: 10.5pt;
     line-height: 1.45;
   }
+
   /* Hide interactive chrome so a printed/saved PDF reads as a paper */
-  #quarto-sidebar, .sidebar,
-  nav[role="doc-toc"], #TOC,
-  .quarto-code-tools, .code-tools-button,
-  #quarto-header, .quarto-title-tools,
-  .nav-footer, #quarto-back-to-top {
+  #quarto-sidebar,
+  .sidebar,
+  nav[role="doc-toc"],
+  #TOC,
+  .quarto-code-tools,
+  .code-tools-button,
+  #quarto-header,
+  .quarto-title-tools,
+  .nav-footer,
+  #quarto-back-to-top {
     display: none !important;
   }
-  main { max-width: 100% !important; }
-  h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
-  figure, table, pre, .cell, .quarto-figure {
+
+  main {
+    max-width: 100% !important;
+  }
+
+  h2,
+  h3,
+  h4 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  figure,
+  table,
+  pre,
+  .cell,
+  .quarto-figure {
     break-inside: avoid;
     page-break-inside: avoid;
   }
-  a { text-decoration: none !important; }
-  @page { margin: 2cm; }
+
+  a {
+    text-decoration: none !important;
+  }
+
+  @page {
+    margin: 2cm;
+  }
+}
+
+/* =====================================================================
+   13. Paper-grade polish
+   Closes the gap between "looks like a paper" and "typeset like one":
+   measure cap, hyphenation control, widow/orphan protection, footnotes
+   and decimal-aligned table numerics. Appended last so it overrides the
+   relevant rules above without editing them.
+   ===================================================================== */
+
+/* ---------- 13.1 Measure (line length) ------------------------------- */
+/* Hold the text to a comfortable ~72-character measure. The key is that
+   the WHOLE running column — title block, headings, rules and body —
+   shares the same left/right edges and is centered, so there is no
+   asymmetric blank gap. Figures, tables and code float wider via the
+   break-out rule below. */
+:root {
+  --paper-measure: 44rem; /* ~72ch — the shared column width */
+}
+
+/* Center the running column. Headings + body + rules all get the same
+   max-width and the same auto side margins, so their edges line up. */
+main > p,
+main > ul,
+main > ol,
+main > dl,
+main > blockquote,
+main > h1,
+main > h2,
+main > h3,
+main > h4,
+main > h5,
+main > h6,
+section > p,
+section > ul,
+section > ol,
+section > dl,
+section > blockquote,
+section > h1,
+section > h2,
+section > h3,
+section > h4,
+section > h5,
+section > h6 {
+  max-width: var(--paper-measure);
+  margin-inline: auto;
+}
+
+/* Match the title block to the same centered column so the masthead
+   lines up with the body text rather than spanning full width. */
+#title-block-header {
+  max-width: var(--paper-measure);
+  margin-inline: auto;
+}
+
+/* Let real full-width content break out of the measure and span the
+   content area, the way figures do in a printed paper. */
+main > figure,
+main > .quarto-figure,
+main > .cell,
+main > table,
+main > div.sourceCode,
+main > .column-page,
+main > .column-screen,
+main > .column-body-outset,
+section > figure,
+section > .quarto-figure,
+section > .cell,
+section > table,
+section > div.sourceCode,
+section > .column-page,
+section > .column-screen,
+section > .column-body-outset {
+  max-width: none;
+}
+
+/* ---------- 13.2 Hyphenation control --------------------------------- */
+/* Prevent ugly two-letter hyphen breaks and limit consecutive hyphenated
+   lines so the right edge stays even without a ladder of hyphens. */
+main p,
+main li {
+  -webkit-hyphenate-limit-before: 3;
+  -webkit-hyphenate-limit-after: 3;
+  hyphenate-limit-chars: 6 3 3; /* min word / before / after */
+  hyphenate-limit-lines: 2;
+  -ms-hyphenate-limit-lines: 2;
+}
+
+/* ---------- 13.3 Widows & orphans ------------------------------------ */
+main p,
+main li,
+main blockquote {
+  orphans: 2;
+  widows: 2;
+}
+
+/* Don't strand a heading at the foot of a screen/page either */
+h2,
+h3,
+h4,
+h5,
+h6 {
+  break-after: avoid;
+  break-inside: avoid;
+}
+
+/* ---------- 13.4 Footnotes & cross-refs ------------------------------ */
+/* Superscript reference markers, set in lining figures so they sit cleanly */
+.footnote-ref,
+a[role="doc-noteref"] {
+  font-feature-settings: "lnum" 1, "sups" 1;
+  text-decoration: none;
+  font-weight: 600;
+  padding-inline: 0.05em;
+}
+
+.footnote-ref:hover,
+a[role="doc-noteref"]:hover {
+  text-decoration: underline;
+}
+
+/* The footnotes block at the foot of the document */
+section.footnotes,
+.footnotes,
+#footnotes {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--bs-border-color, #dee2e6);
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--bs-body-color);
+}
+
+section.footnotes ol,
+.footnotes ol {
+  padding-left: 1.4rem;
+}
+
+section.footnotes li,
+.footnotes li {
+  text-align: left; /* footnotes read better ragged-right */
+  hyphens: manual;
+  margin-bottom: 0.4rem;
+}
+
+/* The back-reference arrow */
+.footnote-back {
+  text-decoration: none;
+  margin-left: 0.35em;
+}
+
+/* ---------- 13.5 Small caps for acronyms ----------------------------- */
+/* Opt-in: wrap an acronym in <abbr> and it gets faux-OpenType small caps,
+   so strings of capitals don't shout in running text. */
+main abbr[title],
+main abbr {
+  font-variant-caps: all-small-caps;
+  font-feature-settings: "smcp" 1, "c2sc" 1, "lnum" 1;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  cursor: help;
+}
+
+/* ---------- 13.6 Table numerics -------------------------------------- */
+/* Tabular lining figures + right/decimal alignment for numeric columns.
+   Mark a numeric column with class="numeric" (or it falls back to the
+   tnum feature already applied to all table text). */
+main table td,
+main table th {
+  font-feature-settings: "lnum" 1, "tnum" 1;
+}
+
+main table td.numeric,
+main table th.numeric,
+main table td[align="right"],
+main table th[align="right"] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 13.7 First-line / drop refinements ----------------------- */
+/* No indent on the first paragraph after a heading; gentle indent on
+   subsequent paragraphs is the classic paper convention. Kept off by
+   default for screen, on for print where there's no inter-paragraph gap. */
+@media print {
+  main p + p {
+    margin-top: 0;
+    text-indent: 1.4em;
+  }
+
+  main h1 + p,
+  main h2 + p,
+  main h3 + p,
+  main h4 + p,
+  main blockquote + p,
+  main figure + p,
+  main pre + p,
+  main ul + p,
+  main ol + p {
+    text-indent: 0;
+  }
+
+  /* Tighter, page-aware footnotes in print */
+  section.footnotes,
+  .footnotes {
+    font-size: 9pt;
+  }
 }

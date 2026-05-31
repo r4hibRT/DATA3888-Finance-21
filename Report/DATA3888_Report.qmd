@@ -526,18 +526,29 @@ This study set out to investigate whether a heterogeneous ensemble of forecastin
 
 ## Student Contributions
 
+| Student | ID | Contributions |
+|---|---|---|
+| Rahib Taha | 530559445 | - Developed the residual stacker model <br> - Conducted final Diebold-Mariano testing and produced result section plots <br> - Post-processed artifacts and CSV outputs <br> - Hosted and managed the GitHub shared codebase <br> - Wrote presentation script and handled Q&A <br> - Proposed the research question <br> - Wrote and edited the report |
+| Thanh Hieu Do | 540914928 | - Preprocessed data and explored modelling approaches <br> - Developed GNN models <br> - Created slides and presentation <br> - Built the Dash app <br> - Wrote and proofread the report <br> - Handled report formatting |
+| Kai Truong | 530148559 | - Researched and compiled the Results section <br> - Delivered the final presentation <br> - Contributed to slides and report <br> - Refined and proofread the report <br> - Refined and worked on the research question |
+| Robin Manjosh John | 540910768 | - Fixed and improved the dashboard <br> - Developed background for the research question <br> - Presented the final product <br> - Compiled the Background section <br> - Assisted in completing the Results section |
+| Hancheng Qiu | 520622546 | - Developed the HAR baseline and HAR-X model with cross-model validation <br> - Answered Q&A during the presentation <br> - Wrote the HAR-X report section <br> - Collaborated on project scope improvements including GitHub commits and feedback |
+| Jamie Khov | 540816954 | - Built and researched the GARCH model <br> - Formatted the report and integrated code into the `.qmd` file <br> - Delivered the final presentation <br> - Refined the References section |
+
 ## References
 
 ::: {#refs}
 :::
 ## Appendix
 
+#### Code Availability
+
+The full source code, data processing pipeline, feature engineering,
+model training scripts, and Dash application are available on GitHub:
+
+<https://github.com/r4hibRT/DATA3888-Finance-21>
+
 #### Appendix A: Feature Definitions
-```{=html}
-<style>
-#tbl-features table { font-size: 1.1em; }
-</style>
-```
 
 ::: {#tbl-features}
 
@@ -627,11 +638,6 @@ plt.show()
 
 #### Appendix D: Terminology
 
-```{=html}
-<style>
-#tbl-terms table { font-size: 1.1em; }
-</style>
-```
 
 ::: {#tbl-terms}
 | Terminology | Description |
