@@ -46,25 +46,81 @@ The repo is easier to understand as four layers: data preparation, models, evalu
 
 ```text
 DATA3888-Finance-21/
-+-- Data preparation
-|   +-- preprocess.ipynb          # raw order book CSVs -> processed folds
-|   +-- eda.ipynb                 # exploratory analysis
-|   +-- EDA_pictures/             # exported EDA figures
-|
-+-- Models
-|   +-- HAR-X/                    # interpretable HAR-X benchmark
-|   +-- GARCH/                    # classical GARCH benchmark
-|   +-- HAR+LightGBM(QLIKE)/      # QLIKE-optimised residual stacker
-|   +-- GNN/                      # spatio-temporal GNN model
-|
-+-- Evaluation
-|   +-- diebold_mariano.ipynb     # statistical model comparison
-|   +-- outputs/evaluation/       # metrics, DM tests, comparison plots
-|
-+-- Delivery
-    +-- Report/                   # final Quarto report
-    +-- DashApp/                  # interactive dashboard
-    +-- README.md
++-- README.md
++-- preprocess.ipynb
++-- eda.ipynb
++-- diebold_mariano.ipynb
++-- appendix_feature_definitions_tmp.html
++-- DashApp/
+|   +-- dashapp.py
+|   +-- dashboard_data.parquet
+|   +-- bucket_RV.py
+|   +-- merge.py
+|   +-- requirements.txt
+|   +-- dashapp.png
+|   +-- model_ranking.png
+|   +-- regime_heatmap.png
+|   +-- asset/
+|   |   +-- custom.css
+|   +-- __pycache__/
+|       +-- dashapp.cpython-314.pyc
++-- EDA_pictures/
+|   +-- eda_cross_stock_variation.png
+|   +-- eda_feature_distributions.png
+|   +-- eda_intraday_patterns.png
+|   +-- eda_per_stock_target.png
+|   +-- eda_target_distribution.png
+|   +-- stock interaction.png
++-- GARCH/
+|   +-- garch.ipynb
+|   +-- garch_predictions_fold*.csv
++-- GNN/
+|   +-- GNN.py
+|   +-- GNN_preprocess.py
+|   +-- prediction/
+|       +-- gnn_nested_cv_summary.json
+|       +-- fold_0/
+|       |   +-- gnn_best_params.json
+|       |   +-- gnn_model.pt
+|       |   +-- gnn_predictions.csv
+|       +-- fold_1/
+|       |   +-- gnn_best_params.json
+|       |   +-- gnn_model.pt
+|       |   +-- gnn_predictions.csv
+|       +-- fold_2/
+|       |   +-- gnn_best_params.json
+|       |   +-- gnn_model.pt
+|       |   +-- gnn_predictions.csv
+|       +-- fold_3/
+|       |   +-- gnn_best_params.json
+|       |   +-- gnn_model.pt
+|       |   +-- gnn_predictions.csv
+|       +-- fold_4/
+|           +-- gnn_best_params.json
+|           +-- gnn_model.pt
+|           +-- gnn_predictions.csv
++-- HAR+LightGBM(QLIKE)/
+|   +-- qlike_hybrid.py
+|   +-- qlike_lgb_fold*_predictions.csv
+|   +-- Results.png
++-- HAR-X/
+|   +-- HAR.py
+|   +-- har_rv_predictions.csv
+|   +-- harx_fold*_predictions.csv
++-- outputs/
+|   +-- evaluation/
+|       +-- base_predictions.csv
+|       +-- dm_tests_all_models.csv
+|       +-- dm_tests_all_models_corrected.csv
+|       +-- fold_metrics.json
+|       +-- model_comparison_forest.png
+|       +-- model_comparison_pooled_oof.png
++-- Report/
+    +-- DATA3888_Report.qmd
+    +-- DATA3888_Report.html
+    +-- paper.css
+    +-- references.bib
+    +-- workflow diagram.png
 ```
 
 ### Key entry points
