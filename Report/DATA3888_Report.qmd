@@ -531,84 +531,25 @@ This study set out to investigate whether a heterogeneous ensemble of forecastin
 ## Appendix {.appendix}
 
 ##### Appendix A: Feature Definitions
-
-```{python}
-#| label: fig-var
-#| fig-cap: "Feature engineering variables used in the analysis."
-#| fig-width: 8
-#| fig-height: 5
-
-import pandas as pd
-import matplotlib.pyplot as plt
-import textwrap
-
-features = [
-    "wap",
-    "bid_ask_spread",
-    "total_volume",
-    "price_spread",
-    "depth_imbalance",
-    "log_ret"
-]
-
-definitions = [
-    "Weighted average price using best bid/ask and opposite-side size weights",
-    "Relative spread between lowest ask and highest bid",
-    "Total displayed volume across top two bid and ask levels",
-    "Full price range across the top two bid and ask quotes",
-    "Relative imbalance between bid-side and ask-side depth",
-    "Log return of weighted average price"
-]
-
-formulas = [
-    "(bid_price1 × ask_size1 + ask_price1 × bid_size1)\n/ (bid_size1 + ask_size1)",
-    "ask_price1 - bid_price1",
-    "bid_size1 + bid_size2 + ask_size1 + ask_size2",
-    "max(price) - min(price)",
-    "((bid_size1 + bid_size2)\n- (ask_size1 + ask_size2))\n/ ((bid_size1 + bid_size2)\n+ (ask_size1 + ask_size2))",
-    "log(wap_t / wap_(t-1))"
-]
-
-wrapped_definitions = [
-    "\n".join(textwrap.wrap(text, width=35))
-    for text in definitions
-]
-
-df = pd.DataFrame({
-    "Feature": features,
-    "Definition": wrapped_definitions,
-    "Formula": formulas
-})
-
-fig, ax = plt.subplots(figsize=(14, 6))
-ax.axis('off')
-
-table = ax.table(
-    cellText=df.values,
-    colLabels=df.columns,
-    cellLoc='left',
-    colWidths=[0.15, 0.40, 0.45],  # feature, definition, formula
-    loc='center'
-)
-
-table.auto_set_font_size(False)
-table.set_fontsize(9)
-table.scale(1, 3.2)
-
-for (row, col), cell in table.get_celld().items():
-    cell.set_edgecolor('black')
-
-    if row == 0:
-        cell.set_text_props(weight='bold')
-        cell.set_facecolor('#D9EAF7')
-        cell.set_height(0.10)
-    else:
-        cell.set_height(0.14)
-
-plt.tight_layout()
-plt.show()
-
+```{=html}
+<style>
+#tbl-features table { font-size: 1.1em; }
+</style>
 ```
+
+::: {#tbl-features}
+
+| Feature | Definition | Formula |
+|:--------|:-----------|:-------:|
+| `wap` | Weighted average price using best bid/ask and opposite-side size weights | $\frac{\text{bid}_1 \cdot \text{ask\_sz}_1 + \text{ask}_1 \cdot \text{bid\_sz}_1}{\text{bid\_sz}_1 + \text{ask\_sz}_1}$ |
+| `bid_ask_spread` | Relative spread between lowest ask and highest bid | $\text{ask}_1 - \text{bid}_1$ |
+| `total_volume` | Total displayed volume across top two bid and ask levels | $\text{bid\_sz}_1 + \text{bid\_sz}_2 + \text{ask\_sz}_1 + \text{ask\_sz}_2$ |
+| `price_spread` | Full price range across the top two bid and ask quotes | $\max(\text{price}) - \min(\text{price})$ |
+| `depth_imbalance` | Relative imbalance between bid-side and ask-side depth | $\frac{(\text{bid\_sz}_1 + \text{bid\_sz}_2) - (\text{ask\_sz}_1 + \text{ask\_sz}_2)}{(\text{bid\_sz}_1 + \text{bid\_sz}_2) + (\text{ask\_sz}_1 + \text{ask\_sz}_2)}$ |
+| `log_ret` | Log return of weighted average price | $\log\!\left(\tfrac{\text{wap}_t}{\text{wap}_{t-1}}\right)$ |
+
+Feature engineering variables used in the analysis.
+:::
 
 ##### Appendix B: EDA
 
@@ -684,79 +625,26 @@ plt.show()
 
 ##### Appendix D: Terminology
 
-```{python}
-#| label: fig-term
-#| fig-cap: "Key terminology used throughout the project."
-#| fig-width: 8
-#| fig-height: 5
-
-import pandas as pd
-import matplotlib.pyplot as plt
-import textwrap
-
-terms = [
-    "Pairwise correlations",
-    "Granger causality",
-    "Lead-lag correlation",
-    "Pairwise Diebold-Mariano",
-    "Newey-West HAC",
-    "Benjamini-Hochberg FDR correction",
-    "GBDT",
-    "Mutual information filtering",
-    "Mamba",
-    "GATv2",
-    "Sigmoid-gated scalar"
-]
-
-descriptions = [
-    "Measures the strength and direction of linear association between two variables, usually using Pearson correlation. In this project, it helps identify which stocks or features tend to move together.",
-    "A time-series test of whether past values of one variable improve prediction of another variable beyond its own history. It does not prove true causation, only predictive precedence.",
-    "Examines whether movements in one series tend to occur before movements in another. Useful for detecting delayed market reactions or information spillover across stocks.",
-    "A statistical test comparing the forecast accuracy of two models. Applied across model pairs to check if performance differences are significant.",
-    "Corrects standard errors in regression when data has autocorrelation or unequal variance. Ensures statistical tests remain valid for time series data.",
-    "Adjusts for false positives when running many statistical tests at once. Less strict than Bonferroni, making it practical for large-scale testing.",
-    "Gradient Boosted Decision Trees — an ensemble method that builds trees sequentially, each fixing the errors of the last. Strong performer on tabular data.",
-    "Selects features based on how much information they share with the target variable, including non-linear relationships. Removes low-value features to reduce noise.",
-    "A sequence model architecture that processes long sequences efficiently in linear time. An alternative to Transformers for capturing temporal patterns.",
-    "A graph neural network that uses learnable attention weights to focus on the most relevant neighbouring nodes. Models relational structure between entities.",
-    "A learnable value squashed between 0 and 1 via a sigmoid function. Acts as a soft on/off switch to control a component's contribution in the model."
-]
-
-# Wider wrapping to utilize the full description column
-wrapped_desc = [
-    "\n".join(textwrap.wrap(desc, width=100))
-    for desc in descriptions
-]
-
-df = pd.DataFrame({
-    "Terminology": terms,
-    "Description": wrapped_desc
-})
-
-fig, ax = plt.subplots(figsize=(16, 8))
-ax.axis('off')
-
-table = ax.table(
-    cellText=df.values,
-    colLabels=df.columns,
-    cellLoc='left',
-    colWidths=[0.22, 0.78],  # wider description column
-    loc='center'
-)
-
-table.auto_set_font_size(False)
-table.set_fontsize(10)
-
-for (row, col), cell in table.get_celld().items():
-    cell.set_edgecolor('black')
-
-    if row == 0:
-        cell.set_facecolor('#D9EAF7')
-        cell.set_text_props(weight='bold')
-        cell.set_height(0.06)
-    else:
-        cell.set_height(0.085)
-
-plt.tight_layout()
-plt.show()
+```{=html}
+<style>
+#tbl-terms table { font-size: 1.1em; }
+</style>
 ```
+
+::: {#tbl-terms}
+| Terminology | Description |
+|:------------|:------------|
+| Pairwise correlations | Measures the strength and direction of linear association between two variables. Identifies which stocks or features tend to move together. |
+| Granger causality | Tests whether past values of one variable improve prediction of another beyond its own history. Detects predictive precedence, not true causation. |
+| Lead-lag correlation | Examines whether movements in one series tend to precede movements in another. Useful for detecting delayed reactions or information spillover across stocks. |
+| Pairwise Diebold-Mariano | Compares forecast accuracy between two models. Applied across model pairs to test whether performance differences are statistically significant. |
+| Newey-West HAC | Corrects standard errors when data has autocorrelation or heteroskedasticity. Keeps statistical tests valid for time series data. |
+| Benjamini-Hochberg FDR correction | Adjusts for false positives when running many tests simultaneously. Less conservative than Bonferroni, making it practical for large-scale testing. |
+| GBDT | Gradient Boosted Decision Trees — an ensemble method building trees sequentially, each correcting errors of the last. Strong performer on tabular data. |
+| Mutual information filtering | Selects features by shared information with the target, capturing non-linear relationships. Removes low-value features to reduce noise. |
+| Mamba | A sequence model that processes long sequences in linear time. An alternative to Transformers for capturing temporal patterns. |
+| GATv2 | A graph neural network using learnable attention weights to focus on the most relevant neighbouring nodes. Models relational structure between entities. |
+| Sigmoid-gated scalar | A learnable value squashed to $[0, 1]$ via sigmoid. Acts as a soft switch controlling a component's contribution in the model. |
+
+Key terminology used throughout the project.
+:::
