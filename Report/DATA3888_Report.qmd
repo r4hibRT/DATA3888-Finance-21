@@ -187,15 +187,13 @@ Once fitted, the model produces a multi-step forecast over the next 120 seconds 
 
 #### HAR-X
 
-HAR-X serves as the augmented industry baseline, extending the HAR-RV framework of [@corsi2009har] by incorporating order-book microstructure features alongside realised volatility lags [@corsi2009har]. The model regresses log-realised volatility over the forecast window on three heterogeneous RV components: the full 8-minute input window, the final 2-minute bucket, and the intermediate 4-minute window which translates volatility persistence across intraday horizons following Andersen et al. (2003). [@andersen2003realized]
+HAR-X serves as the augmented industry baseline, extending the HAR-RV framework of [@corsi2009har] by incorporating order-book microstructure features alongside realised volatility lags. The model regresses log-realised volatility over the forecast window on three heterogeneous RV components: the full 8-minute input window, the final 2-minute bucket, and the intermediate 4-minute window which translates volatility persistence across intraday horizons following Andersen et al. (2003). [@andersen2003realized]
 
 A meaningful ensemble evaluation requires a baseline that already exploits the most accessible predictive signal. By augmenting HAR with bid-ask spread, total order-book volume, and volume imbalance, HAR-X absorbs the straightforward gains from microstructure information that a pure RV model cannot access. Any further improvement achieved by the ensemble approaches therefore reflects nonlinear or cross-stock structure that a linear, stock-independent model cannot capture making HAR-X a more rigorous point of comparison than HAR alone.
 
 The model is estimated via OLS in log-volatility space with predictions exponentiated back to the RV scale, consistent with the log-normal treatment adopted throughout.
 
 ### Ensemble Models
-
-Given the strength of HAR-X as a linear baseline, we now introduce two ensemble approaches designed to extend it in complementary ways.
 
 #### Residual Stacker with QLike-optimised correction
 
@@ -528,9 +526,13 @@ This study set out to investigate whether a heterogeneous ensemble of forecastin
 
 ## Student Contributions
 
-## Appendix {.appendix}
+## References
 
-##### Appendix A: Feature Definitions
+::: {#refs}
+:::
+## Appendix
+
+#### Appendix A: Feature Definitions
 ```{=html}
 <style>
 #tbl-features table { font-size: 1.1em; }
@@ -551,7 +553,7 @@ This study set out to investigate whether a heterogeneous ensemble of forecastin
 Feature engineering variables used in the analysis.
 :::
 
-##### Appendix B: EDA
+#### Appendix B: EDA
 
 ```{python}
 #| label: fig-stock_interaction
@@ -587,7 +589,7 @@ ax.axis("off")
 plt.show()
 ```
 
-##### Appendix C: DashApp
+#### Appendix C: DashApp
 
 ```{python}
 #| label: fig-heatmap
@@ -623,7 +625,7 @@ plt.show()
 
 ```
 
-##### Appendix D: Terminology
+#### Appendix D: Terminology
 
 ```{=html}
 <style>
