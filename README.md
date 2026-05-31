@@ -1,6 +1,6 @@
 # DATA3888 Finance Group 21
 
-Volatility forecasting project using Optiver-style high-frequency limit order book data. The project compares classical and machine learning models for short-term realised volatility forecasting, then communicates the results through a Quarto report and an interactive Dash app.
+This project forecasts short-term realised volatility using high-frequency limit order book data. It compares classical volatility benchmarks, HAR-style models, a QLIKE-optimised LightGBM residual stacker, and a spatio-temporal GNN. The final outputs are a Quarto report and an interactive Dash app for inspecting model behaviour.
 
 ## Project Summary
 
@@ -8,23 +8,28 @@ Volatility forecasting project using Optiver-style high-frequency limit order bo
 
 Can a heterogeneous ensemble of volatility forecasting models systematically outperform individual classical benchmarks for short-term volatility forecasting using high-frequency order book data?
 
-### Forecasting task
+### Forecasting setup
 
-- Input window: first 8 minutes of each 10-minute `time_id`
-- Target window: final 2 minutes of each 10-minute `time_id`
-- Target variable: realised volatility over seconds `480-599`
-- Dataset structure: per-second order book snapshots across 112 stocks
+| Item | Description |
+|---|---|
+| Input window | First 8 minutes of each 10-minute `time_id`, seconds `0-479` |
+| Target window | Final 2 minutes of each 10-minute `time_id`, seconds `480-599` |
+| Target variable | Realised volatility over the target window |
+| Data frequency | Per-second order book snapshots |
+| Stock universe | 112 stocks |
 
-### Main models
+### Models
 
-- `GARCH`: classical volatility benchmark
-- `HAR-X`: interpretable HAR baseline augmented with order book liquidity features
-- `QLIKE-LGB`: HAR residual stacker using LightGBM and QLIKE-oriented correction
-- `GNN`: spatio-temporal neural model with Mamba, GATv2, and a learned HAR blend
+| Model | Role |
+|---|---|
+| `GARCH` | Classical volatility benchmark |
+| `HAR-X` | Interpretable HAR baseline with order book liquidity features |
+| `QLIKE-LGB` | HAR residual stacker using LightGBM and QLIKE-oriented correction |
+| `GNN` | Spatio-temporal neural model using Mamba, GATv2, and a learned HAR blend |
 
-### Current checked-in results
+### Checked-in results
 
-From `outputs/evaluation/fold_metrics.json`:
+The current reported fold metrics are stored in `outputs/evaluation/fold_metrics.json`.
 
 | Model | Mean QLIKE | Mean RMSPE |
 |---|---:|---:|
@@ -33,16 +38,11 @@ From `outputs/evaluation/fold_metrics.json`:
 | GNN | 0.0725 | 0.4113 |
 | GARCH | 0.0564 | 1.2637 |
 
-Interpretation:
+`QLIKE-LGB` gives the best calibrated forecasts under QLIKE. `GNN` gives the lowest RMSPE. `HAR-X` is the main interpretable benchmark, and `GARCH` is the classical baseline.
 
-- `QLIKE-LGB` gives the best calibrated forecasts under QLIKE.
-- `GNN` gives the lowest RMSPE.
-- `HAR-X` is the main interpretable benchmark.
-- `GARCH` is the classical baseline.
+## Current Repo Tree
 
-## Simplified Repo
-
-The repo is easier to understand as four layers: data preparation, models, evaluation/reporting, and app delivery.
+This tree mirrors the current repo structure. Repeated prediction files are grouped with `*`, and repeated GNN fold contents are collapsed to keep the README readable.
 
 ```text
 DATA3888-Finance-21/
@@ -80,25 +80,10 @@ DATA3888-Finance-21/
 |   +-- prediction/
 |       +-- gnn_nested_cv_summary.json
 |       +-- fold_0/
-|       |   +-- gnn_best_params.json
-|       |   +-- gnn_model.pt
-|       |   +-- gnn_predictions.csv
 |       +-- fold_1/
-|       |   +-- gnn_best_params.json
-|       |   +-- gnn_model.pt
-|       |   +-- gnn_predictions.csv
 |       +-- fold_2/
-|       |   +-- gnn_best_params.json
-|       |   +-- gnn_model.pt
-|       |   +-- gnn_predictions.csv
 |       +-- fold_3/
-|       |   +-- gnn_best_params.json
-|       |   +-- gnn_model.pt
-|       |   +-- gnn_predictions.csv
 |       +-- fold_4/
-|           +-- gnn_best_params.json
-|           +-- gnn_model.pt
-|           +-- gnn_predictions.csv
 +-- HAR+LightGBM(QLIKE)/
 |   +-- qlike_hybrid.py
 |   +-- qlike_lgb_fold*_predictions.csv
@@ -125,35 +110,38 @@ DATA3888-Finance-21/
 
 ### Key entry points
 
-| Task | Start here |
+| Task | File |
 |---|---|
-| Create processed training folds | `preprocess.ipynb` |
-| Explore the data | `eda.ipynb` |
-| Run HAR-X baseline | `HAR-X/HAR.py` |
-| Run GARCH benchmark | `GARCH/garch.ipynb` |
-| Run GNN pipeline | `GNN/GNN_preprocess.py`, then `GNN/GNN.py` |
+| Create processed folds | `preprocess.ipynb` |
+| Run EDA | `eda.ipynb` |
+| Run HAR-X | `HAR-X/HAR.py` |
+| Run GARCH | `GARCH/garch.ipynb` |
+| Preprocess GNN data | `GNN/GNN_preprocess.py` |
+| Train GNN | `GNN/GNN.py` |
 | Run QLIKE LightGBM stacker | `HAR+LightGBM(QLIKE)/qlike_hybrid.py` |
-| Compare model significance | `diebold_mariano.ipynb` |
-| Render final report | `Report/DATA3888_Report.qmd` |
+| Run statistical model comparison | `diebold_mariano.ipynb` |
+| Render report | `Report/DATA3888_Report.qmd` |
 | Launch dashboard | `DashApp/dashapp.py` |
 
-### Expected external data folders
+### External data folders
 
-These folders are part of the runtime pipeline but are not committed to the repo because they are large generated data artifacts:
+These folders are expected by the pipeline but are not committed to the repo.
 
 ```text
 individual_book_train/             raw Optiver-style stock CSVs
-individual_book_train_denorm/      cleaned per-second stock CSVs
-processed/                         fold-level parquet files used by models
+individual_book_train_denorm/      cleaned per-second stock CSVs from preprocessing
+processed/                         generated fold-level parquet files
 ```
+
+The most important missing folder is `processed/`. Most model scripts expect it to exist before training or evaluation.
 
 ## Step-By-Step Reproduction Order For Preprocessing
 
-The preprocessing notebook is the foundation for the rest of the project. Run this first if you want to reproduce model training or rebuild downstream files.
+Run preprocessing first if you want to reproduce model training, regenerate folds, or rebuild downstream artifacts.
 
 ### 1. Prepare raw data
 
-Place raw stock CSV files in a folder like:
+Place the raw order book CSV files in:
 
 ```text
 individual_book_train/
@@ -162,7 +150,7 @@ individual_book_train/
 +-- ...
 ```
 
-Each file should contain the raw order book columns used in `preprocess.ipynb`, including:
+Each stock file should contain:
 
 - `time_id`
 - `seconds_in_bucket`
@@ -171,9 +159,15 @@ Each file should contain the raw order book columns used in `preprocess.ipynb`, 
 - `bid_size1`, `bid_size2`
 - `ask_size1`, `ask_size2`
 
-### 2. Open and run `preprocess.ipynb`
+### 2. Run `preprocess.ipynb`
 
-The notebook creates the project base features:
+Open and run:
+
+```text
+preprocess.ipynb
+```
+
+The notebook creates the base per-second features:
 
 - `wap`
 - `bid_ask_spread`
@@ -181,17 +175,16 @@ The notebook creates the project base features:
 - `price_spread`
 - `depth_imbalance`
 
-It also fills missing seconds within each `time_id`, then writes cleaned stock files to:
+It also fills missing seconds within each `time_id` and writes cleaned stock files to `individual_book_train_denorm/`.
 
-```text
-individual_book_train_denorm/
-```
+### 3. Update local paths in `preprocess.ipynb`
 
-### 3. Update the local data path inside `preprocess.ipynb`
+The notebook currently assumes local paths. Check both:
 
-The notebook currently contains a personal absolute path in the final `split_and_save(...)` call. Update `data_dir` so it points to your local `individual_book_train_denorm/` folder.
+- the raw file glob: `individual_book_train\stock_*.csv`
+- the `data_dir` argument inside the final `split_and_save(...)` call
 
-The call should conceptually look like:
+The final split call should conceptually point to your cleaned data folder:
 
 ```python
 split_and_save(
@@ -200,27 +193,27 @@ split_and_save(
 )
 ```
 
-### 4. Generate processed folds
+### 4. Confirm generated outputs
 
-After the notebook finishes, the expected output is:
+After preprocessing, the expected generated structure is:
 
 ```text
 processed/
 +-- full.parquet
-+-- fold_0/train.parquet
-+-- fold_0/test.parquet
-+-- fold_1/train.parquet
-+-- fold_1/test.parquet
-+-- ...
-+-- fold_4/train.parquet
-+-- fold_4/test.parquet
++-- fold_0/
+|   +-- train.parquet
+|   +-- test.parquet
++-- fold_1/
++-- fold_2/
++-- fold_3/
++-- fold_4/
 ```
 
 These processed files are used by `HAR-X`, `GARCH`, `GNN`, `HAR+LightGBM(QLIKE)`, the dashboard build scripts, and the report.
 
 ## Report Render
 
-The report is already rendered at:
+The rendered report is already checked in:
 
 ```text
 Report/DATA3888_Report.html
@@ -235,7 +228,7 @@ quarto render DATA3888_Report.qmd
 
 ### Report requirements
 
-- Quarto installed on your machine
+- Quarto installed locally
 - Python packages:
   - `pandas`
   - `numpy`
@@ -244,14 +237,15 @@ quarto render DATA3888_Report.qmd
 
 ### Report notes
 
-- The report uses `Report/DATA3888_Report.qmd` as its source.
-- Figures are loaded from `EDA_pictures/`, `DashApp/`, and `Report/`.
-- On Windows, the current relative paths should work as-is.
-- On case-sensitive systems, check the `EDA_pictures/` path casing in the `.qmd`.
+- Source file: `Report/DATA3888_Report.qmd`
+- Bibliography: `Report/references.bib`
+- Styling: `Report/paper.css`
+- Figures are loaded from `EDA_pictures/`, `DashApp/`, and `Report/`
+- On case-sensitive systems, check image path casing because the report currently references both `EDA_pictures` and `eda_pictures`
 
 ## Dashboard And App Run Instructions
 
-The Dash app is the easiest way to inspect model behaviour visually.
+The Dash app is the interactive project demo. It uses the checked-in dashboard dataset, so it can be run without retraining the models.
 
 ### 1. Install dashboard dependencies
 
@@ -266,7 +260,7 @@ python -m pip install -r requirements.txt
 python dashapp.py
 ```
 
-Then open the local address printed by Dash, usually:
+Open the local address printed by Dash, usually:
 
 ```text
 http://127.0.0.1:8050
@@ -282,9 +276,9 @@ DashApp/dashboard_data.parquet
 
 This file is already checked into the repo.
 
-### 4. Optional: rebuild dashboard data
+### 4. Optional dashboard data rebuild
 
-To rebuild the dashboard data from processed files and model predictions, update the hardcoded paths in:
+To rebuild `dashboard_data.parquet`, first update hardcoded paths in:
 
 - `DashApp/bucket_RV.py`
 - `DashApp/merge.py`
@@ -297,11 +291,11 @@ python bucket_RV.py
 python merge.py
 ```
 
-`bucket_RV.py` computes realised volatility buckets. `merge.py` combines bucket RVs with model prediction CSVs and writes `dashboard_data.parquet`.
+`bucket_RV.py` computes realised-volatility buckets from processed data. `merge.py` combines bucket RVs with model prediction CSVs.
 
 ## Dependency Guidance
 
-There is currently no single root `requirements.txt`, so install dependencies by component.
+There is no single root `requirements.txt` yet, so install dependencies by component.
 
 ### Core analysis and notebooks
 
@@ -311,7 +305,7 @@ python -m pip install pandas numpy scipy matplotlib pyarrow scikit-learn joblib 
 
 ### Report
 
-Install Quarto separately from:
+Install Quarto separately:
 
 ```text
 https://quarto.org/
@@ -349,9 +343,7 @@ The GNN is the heaviest dependency stack and is best run in an environment with 
 
 ## Notes On Hardcoded Paths
 
-Several files still contain personal absolute paths. These must be updated before a full reproduction run on a new machine.
-
-### Files to check
+Several files still contain personal absolute paths. Update these before a full reproduction run on a new machine.
 
 | File | What to update |
 |---|---|
@@ -364,6 +356,6 @@ Several files still contain personal absolute paths. These must be updated befor
 | `DashApp/merge.py` | `BASE_DIR` and model prediction file paths |
 | `diebold_mariano.ipynb` | model prediction directories and evaluation output directory |
 
-### Most important path issue
+### Practical warning
 
-The repo does not include the generated `processed/` folder. Most model scripts expect it to exist. Recreate it with `preprocess.ipynb` before rerunning model training.
+The checked-in outputs make the report and dashboard easy to view, but a full rerun still requires local data path fixes and the generated `processed/` folder.
