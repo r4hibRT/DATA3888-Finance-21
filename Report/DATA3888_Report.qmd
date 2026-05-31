@@ -65,7 +65,7 @@ Volatility co-moves strongly across stocks, but contemporaneously rather than pr
 ```{python}
 #| label: fig-workflow
 #| fig-cap: "Workflow Diagram of our study"
-#| echo: false
+#| echo: True
 
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
@@ -336,7 +336,7 @@ The results, as seen above in @fig-model-comparison show that model performance 
 ```{python}
 #| label: fig-dm-table
 #| fig-cap: "Diebold-Mariano pairwise tests with Benjamini-Hochberg FDR correction. Positive DM stat indicates Model 2 is better; significance stars reflect BH-corrected p-values."
-#| echo: false
+#| echo: True
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -492,7 +492,7 @@ By contrast, the GNN achieves the lowest RMSPE of 0.4121. The Diebold-Mariano re
 ```{python}
 #| label: fig-dash-app
 #| fig-cap: "DashApp landing page showing model predictions across stocks."
-#| echo: false
+#| echo: True
 
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
@@ -569,7 +569,7 @@ Feature engineering variables used in the analysis.
 ```{python}
 #| label: fig-stock_interaction
 #| fig-cap: "Stock Interaction Summary"
-#| echo: false
+#| echo: True
 
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
@@ -586,7 +586,7 @@ plt.show()
 ```{python}
 #| label: fig-eda-target-distribution
 #| fig-cap: "Distribution of log-realised volatility across all forecast windows."
-#| echo: false
+#| echo: True
 
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
@@ -605,7 +605,7 @@ plt.show()
 ```{python}
 #| label: fig-heatmap
 #| fig-cap: "Regime Heatmap tab of the DashApp"
-#| echo: false
+#| echo: True
 
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
@@ -622,7 +622,7 @@ plt.show()
 ```{python}
 #| label: fig-ranking
 #| fig-cap: "Model Ranking tab of the DashApp"
-#| echo: false
+#| echo: True
 
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg

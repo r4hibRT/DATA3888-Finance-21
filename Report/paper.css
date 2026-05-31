@@ -428,6 +428,16 @@ section > .column-body-outset {
   max-width: none;
 }
 
+/* Quarto wraps folded chunks in <details class="code-fold"> *inside* .cell,
+   so the direct-child selector above misses it. Ensure the details element
+   and its sourceCode child are never width-constrained by the measure. */
+.cell details.code-fold,
+.cell details.code-fold > summary,
+.cell details.code-fold div.sourceCode {
+  max-width: none;
+  margin-inline: unset;
+}
+
 /* ---------- 13.2 Hyphenation control --------------------------------- */
 /* Prevent ugly two-letter hyphen breaks and limit consecutive hyphenated
    lines so the right edge stays even without a ladder of hyphens. */
