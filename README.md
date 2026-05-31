@@ -311,12 +311,3 @@ Several files still contain personal absolute paths. These must be updated befor
 ### Most important path issue
 
 The repo does not include the generated `processed/` folder. Most model scripts expect it to exist. Recreate it with `preprocess.ipynb` before rerunning model training.
-
-### Recommended cleanup
-
-For a cleaner future version of the repo:
-
-1. move all paths into one shared config file
-2. add a root `requirements.txt` or `environment.yml`
-3. convert notebook-only stages into scripts where possible
-4. add one orchestration script for preprocessing, evaluation, dashboard data, and report rendering
